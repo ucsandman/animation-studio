@@ -13,21 +13,35 @@ const stepEvent = z.object({
   label: z.string().min(1),
 });
 
+// x,y = center of the region of interest; w,h = its size in viewport px
+const focusEvent = z.object({
+  type: z.literal('focus'),
+  t: z.number().nonnegative(),
+  x: z.number(),
+  y: z.number(),
+  w: z.number().positive(),
+  h: z.number().positive(),
+});
+
 export const telemetrySchema = z.object({
   viewport: z.object({width: z.number().positive(), height: z.number().positive()}),
   durationMs: z.number().positive(),
-  events: z.array(z.discriminatedUnion('type', [clickEvent, stepEvent])),
+  events: z.array(z.discriminatedUnion('type', [clickEvent, stepEvent, focusEvent])),
 });
 
 export type Telemetry = z.infer<typeof telemetrySchema>;
 export type ClickEvent = z.infer<typeof clickEvent>;
 export type StepEvent = z.infer<typeof stepEvent>;
+export type FocusEvent = z.infer<typeof focusEvent>;
 
 export const clicks = (tel: Telemetry): ClickEvent[] =>
   tel.events.filter((e): e is ClickEvent => e.type === 'click');
 
 export const steps = (tel: Telemetry): StepEvent[] =>
   tel.events.filter((e): e is StepEvent => e.type === 'step');
+
+export const focuses = (tel: Telemetry): FocusEvent[] =>
+  tel.events.filter((e): e is FocusEvent => e.type === 'focus');
 
 export const easeInOutCubic = (t: number): number =>
   t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2;

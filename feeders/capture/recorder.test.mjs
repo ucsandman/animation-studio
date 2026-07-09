@@ -34,3 +34,19 @@ test('using the recorder before start() throws', () => {
   const r = new Recorder();
   assert.throws(() => r.step('x'), /start/);
 });
+
+test('records an explicit focus region with rounded center and size', () => {
+  const r = new Recorder();
+  r.start();
+  r.focusAt(930.4, 379.6, {w: 1000, h: 560});
+  const tel = r.finish({width: 1720, height: 1000});
+  assert.deepEqual(
+    {...tel.events[0], t: 0},
+    {type: 'focus', t: 0, x: 930, y: 380, w: 1000, h: 560},
+  );
+});
+
+test('focusAt before start() throws', () => {
+  const r = new Recorder();
+  assert.throws(() => r.focusAt(1, 2), /start/);
+});

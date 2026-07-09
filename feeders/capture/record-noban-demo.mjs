@@ -15,8 +15,8 @@ import {Recorder} from './recorder.mjs';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const NOBAN = process.env.NOBAN_ROOT ?? 'C:/Projects/noban-gg';
-const VIEWPORT = {width: 1600, height: 1000};
-const VIEW_HOLD_MS = 3200;
+const VIEWPORT = {width: 1720, height: 1000}; // wide enough for the full opportunities table
+const VIEW_HOLD_MS = 3600;
 
 let env;
 try {
@@ -35,7 +35,8 @@ const redact = (err) => new Error(String(err?.message ?? err).replaceAll(token, 
 
 const base = `http://localhost:${port}`;
 try {
-  await fetch(base, {signal: AbortSignal.timeout(3000)});
+  const res = await fetch(base, {signal: AbortSignal.timeout(3000)});
+  if (res.status >= 500) throw new Error(`server error ${res.status}`);
 } catch {
   console.error(`Dashboard unreachable at ${base}. Start it: cd ${NOBAN} && pnpm start`);
   process.exit(1);
@@ -48,6 +49,7 @@ try {
   browser = await chromium.launch();
   const context = await browser.newContext({
     viewport: VIEWPORT,
+    deviceScaleFactor: 2, // supersampled render downscaled into the webm: crisper footage
     recordVideo: {dir: videoDir, size: VIEWPORT},
   });
   const page = await context.newPage();
@@ -55,9 +57,12 @@ try {
 
   const nav = (name) => page.getByRole('button', {name, exact: true});
   const VIEWS = [
-    {name: 'Opportunities', caption: 'Detected opportunities, ranked by net dollars', ready: () => page.locator('tbody tr').first()},
-    {name: 'Ledger', caption: 'Every simulated trade lands in the ledger', ready: () => page.getByText('Open cost basis').first()},
-    {name: 'Governance', caption: 'Spend caps and approvals on every action', ready: () => page.getByText('Decision ledger').first()},
+    // focus rects measured from raw 1720x1000 footage; the opportunities
+    // window ends left of the app's own clipped table edge (the card crops
+    // its rightmost column at any viewport; do not frame the ragged cut)
+    {name: 'Opportunities', caption: 'Detected opportunities, ranked by net dollars', ready: () => page.locator('tbody tr').first(), focus: {x: 930, y: 380, w: 1000, h: 560}},
+    {name: 'Ledger', caption: 'Every simulated trade lands in the ledger', ready: () => page.getByText('Open cost basis').first(), focus: {x: 980, y: 340, w: 1100, h: 420}},
+    {name: 'Governance', caption: 'Spend caps and approvals on every action', ready: () => page.getByText('Decision ledger').first(), focus: {x: 980, y: 490, w: 1100, h: 630}},
   ];
 
   rec.start();
@@ -70,9 +75,12 @@ try {
 
   for (const view of VIEWS) {
     await rec.click(nav(view.name), view.caption);
-    await view.ready().waitFor({timeout: 30_000}).catch(() => {
+    const readyEl = view.ready();
+    await readyEl.waitFor({timeout: 30_000}).catch(() => {
       throw new Error(`${view.name} never rendered data; generate sim activity first.`);
     });
+    // camera focus: frame the content that just loaded, not the nav click
+    rec.focusAt(view.focus.x, view.focus.y, view.focus);
     await page.waitForTimeout(VIEW_HOLD_MS);
   }
 

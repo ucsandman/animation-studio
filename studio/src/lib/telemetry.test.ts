@@ -1,5 +1,5 @@
 import {describe, expect, it} from 'vitest';
-import {cursorAt, telemetrySchema, clicks, steps} from './telemetry';
+import {cursorAt, telemetrySchema, clicks, steps, focuses} from './telemetry';
 
 const CLICKS = [
   {type: 'click' as const, t: 1000, x: 100, y: 100},
@@ -18,6 +18,16 @@ describe('telemetrySchema', () => {
     });
     expect(clicks(tel)).toHaveLength(1);
     expect(steps(tel)[0].label).toBe('intro');
+  });
+
+  it('validates focus events and filters them', () => {
+    const tel = telemetrySchema.parse({
+      viewport: {width: 1600, height: 1000},
+      durationMs: 5000,
+      events: [{type: 'focus', t: 1200, x: 900, y: 500, w: 1100, h: 700}],
+    });
+    expect(focuses(tel)).toHaveLength(1);
+    expect(focuses(tel)[0].w).toBe(1100);
   });
 
   it('rejects unknown event types', () => {

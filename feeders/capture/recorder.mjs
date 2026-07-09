@@ -30,6 +30,18 @@ export class Recorder {
     await locator.click();
   }
 
+  /** Logs a camera focus region of w x h centered at (x, y) in viewport px. */
+  focusAt(x, y, {w = 1150, h = 720} = {}) {
+    this.#events.push({
+      type: 'focus',
+      t: this.#now(),
+      x: Math.round(x),
+      y: Math.round(y),
+      w,
+      h,
+    });
+  }
+
   finish(viewport) {
     return {viewport, durationMs: this.#now(), events: this.#events};
   }

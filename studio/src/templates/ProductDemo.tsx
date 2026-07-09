@@ -15,7 +15,7 @@ import {NobanMark} from '../brands/NobanMark';
 import {FloatBar} from '../components/FloatBar';
 import {DemoCursor} from '../components/DemoCursor';
 import {Caption} from '../components/Caption';
-import {telemetrySchema, clicks, steps} from '../lib/telemetry';
+import {telemetrySchema, clicks, steps, focuses} from '../lib/telemetry';
 import {cameraAt} from '../lib/camera';
 
 export const productDemoSchema = z.object({
@@ -27,7 +27,7 @@ export const productDemoSchema = z.object({
 
 type Props = z.infer<typeof productDemoSchema>;
 
-const STAGE_SCALE = 0.82; // 1600x1000 stage inside 1920x1080 with caption room
+const STAGE_SCALE = 0.9; // 1600x1000 stage inside 1920x1080 with caption room
 
 const EndCard: React.FC<{cta: string}> = ({cta}) => {
   const frame = useCurrentFrame();
@@ -60,7 +60,7 @@ export const ProductDemo: React.FC<Props> = ({video, cta, telemetry}) => {
   const stepList = telemetry ? steps(telemetry) : [];
   const activeStep = [...stepList].reverse().find((s) => s.t <= timeMs);
   const vp = telemetry?.viewport ?? {width: 1600, height: 1000};
-  const cam = cameraAt(clickList, timeMs, vp);
+  const cam = cameraAt(telemetry ? focuses(telemetry) : [], timeMs, vp);
   const bodyFrames = telemetry
     ? Math.ceil((telemetry.durationMs / 1000) * fps)
     : durationInFrames - 60;
@@ -69,7 +69,7 @@ export const ProductDemo: React.FC<Props> = ({video, cta, telemetry}) => {
     <AbsoluteFill style={{backgroundColor: brand.colors.bg}}>
       <AbsoluteFill
         style={{
-          background: `radial-gradient(60% 50% at 50% 30%, ${brand.colors.brand}22, transparent 70%)`,
+          background: `radial-gradient(70% 55% at 50% 32%, ${brand.colors.brand}30, transparent 72%)`,
         }}
       />
       <Sequence durationInFrames={bodyFrames}>
@@ -79,7 +79,7 @@ export const ProductDemo: React.FC<Props> = ({video, cta, telemetry}) => {
             style={{
               width: vp.width,
               height: vp.height,
-              transform: `scale(${STAGE_SCALE}) translateY(-36px)`,
+              transform: `scale(${STAGE_SCALE}) translateY(-28px)`,
               borderRadius: 14,
               border: `1px solid ${brand.colors.line}`,
               background: brand.colors.surface,
@@ -93,15 +93,21 @@ export const ProductDemo: React.FC<Props> = ({video, cta, telemetry}) => {
               style={{
                 width: '100%',
                 height: '100%',
-                transform: `scale(${cam.scale})`,
-                transformOrigin: `${cam.originX}px ${cam.originY}px`,
+                // scale about the stage center, then shift so the camera's
+                // focus center (originX/Y, clamped in camera.ts) sits centered
+                transform: `scale(${cam.scale}) translate(${vp.width / 2 - cam.originX}px, ${vp.height / 2 - cam.originY}px)`,
                 position: 'relative',
               }}
             >
               {video ? (
                 <OffthreadVideo
                   src={staticFile(video)}
-                  style={{width: '100%', height: '100%', display: 'block'}}
+                  style={{
+                    width: '100%',
+                    height: '100%',
+                    display: 'block',
+                    filter: 'brightness(1.12) contrast(1.03)',
+                  }}
                   muted
                 />
               ) : (

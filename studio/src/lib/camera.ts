@@ -1,11 +1,9 @@
-import type {ClickEvent} from './telemetry';
+import type {FocusEvent} from './telemetry';
 import {easeInOutCubic} from './telemetry';
 
-const ZOOM = 1.35;
-const LEAD_MS = 400; // window starts this long before the click
-const IN_MS = 500;
-const HOLD_MS = 1800;
-const OUT_MS = 600;
+const TRANSITION_MS = 900; // one eased move per focus, then hold until the next
+const MAX_SCALE = 1.6;
+const FILL = 0.92; // fraction of the viewport the focus region should fill
 
 type Camera = {scale: number; originX: number; originY: number};
 
@@ -14,32 +12,35 @@ const clampOrigin = (v: number, span: number, scale: number): number => {
   return Math.min(Math.max(v, half), span - half);
 };
 
+const focusCamera = (f: FocusEvent, viewport: {width: number; height: number}): Camera => {
+  const scale = Math.min(
+    MAX_SCALE,
+    Math.max(1, FILL * Math.min(viewport.width / f.w, viewport.height / f.h)),
+  );
+  return {
+    scale,
+    originX: clampOrigin(f.x, viewport.width, scale),
+    originY: clampOrigin(f.y, viewport.height, scale),
+  };
+};
+
 export const cameraAt = (
-  clickList: ClickEvent[],
+  focusList: FocusEvent[],
   tMs: number,
   viewport: {width: number; height: number},
 ): Camera => {
   const rest: Camera = {scale: 1, originX: viewport.width / 2, originY: viewport.height / 2};
-  // last window whose zoom has begun; later clicks win overlaps
-  let active: ClickEvent | undefined;
-  for (const c of clickList) {
-    if (tMs >= c.t - LEAD_MS) active = c;
-  }
-  if (!active) return rest;
+  // index of the last focus at or before tMs (-1 if before all focuses)
+  let i = -1;
+  while (i + 1 < focusList.length && focusList[i + 1].t <= tMs) i++;
+  if (i < 0) return rest;
 
-  const start = active.t - LEAD_MS;
-  const sinceStart = tMs - start;
-  let k: number; // 0 = rest, 1 = fully zoomed
-  if (sinceStart < IN_MS) k = easeInOutCubic(sinceStart / IN_MS);
-  else if (sinceStart < IN_MS + HOLD_MS) k = 1;
-  else if (sinceStart < IN_MS + HOLD_MS + OUT_MS)
-    k = 1 - easeInOutCubic((sinceStart - IN_MS - HOLD_MS) / OUT_MS);
-  else return rest;
-
-  const scale = 1 + (ZOOM - 1) * k;
+  const target = focusCamera(focusList[i], viewport);
+  const from = i === 0 ? rest : focusCamera(focusList[i - 1], viewport);
+  const p = easeInOutCubic(Math.min((tMs - focusList[i].t) / TRANSITION_MS, 1));
   return {
-    scale,
-    originX: clampOrigin(active.x, viewport.width, scale),
-    originY: clampOrigin(active.y, viewport.height, scale),
+    scale: from.scale + (target.scale - from.scale) * p,
+    originX: from.originX + (target.originX - from.originX) * p,
+    originY: from.originY + (target.originY - from.originY) * p,
   };
 };
