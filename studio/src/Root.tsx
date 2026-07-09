@@ -1,17 +1,18 @@
 import "./index.css";
+import React from "react";
 import { Composition } from "remotion";
-import { MyComposition } from "./Composition";
+import { ComponentGallery } from "./templates/ComponentGallery";
 
 export const RemotionRoot: React.FC = () => {
   return (
     <>
       <Composition
-        id="MyComp"
-        component={MyComposition}
-        durationInFrames={60}
+        id="ComponentGallery"
+        component={ComponentGallery}
+        durationInFrames={90}
         fps={30}
-        width={1280}
-        height={720}
+        width={1920}
+        height={1080}
       />
     </>
   );
