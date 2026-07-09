@@ -4,13 +4,22 @@ import {getBrand} from '../lib/brand';
 import {loadBrandFonts} from '../lib/fonts';
 import {NobanMark} from '../brands/NobanMark';
 import {FloatBar} from '../components/FloatBar';
+import {DemoCursor} from '../components/DemoCursor';
+import {Caption} from '../components/Caption';
+
+const GALLERY_CLICKS = [
+  {type: 'click' as const, t: 600, x: 120, y: 60},
+  {type: 'click' as const, t: 1800, x: 520, y: 120},
+  {type: 'click' as const, t: 2600, x: 300, y: 40},
+];
 
 export const ComponentGallery: React.FC = () => {
   const frame = useCurrentFrame();
-  const {durationInFrames} = useVideoConfig();
+  const {durationInFrames, fps} = useVideoConfig();
   const brand = getBrand('noban');
   const fonts = loadBrandFonts();
   const progress = interpolate(frame, [0, durationInFrames - 1], [0, 1]);
+  const timeMs = (frame / fps) * 1000;
   return (
     <AbsoluteFill
       style={{
@@ -18,7 +27,7 @@ export const ComponentGallery: React.FC = () => {
         color: brand.colors.ink,
         justifyContent: 'center',
         alignItems: 'center',
-        gap: 48,
+        gap: 40,
       }}
     >
       <NobanMark size={96} color={brand.colors.brand} />
@@ -32,6 +41,20 @@ export const ComponentGallery: React.FC = () => {
         +$12.40 net spread
       </div>
       <FloatBar progress={progress} brand={brand} width={800} />
+      {/* demo strip: cursor roaming a mock panel + a caption */}
+      <div
+        style={{
+          position: 'relative',
+          width: 640,
+          height: 160,
+          borderRadius: 12,
+          border: `1px solid ${brand.colors.line}`,
+          background: brand.colors.surface,
+        }}
+      >
+        <DemoCursor clickList={GALLERY_CLICKS} timeMs={timeMs} brand={brand} />
+      </div>
+      <Caption label="Synthetic cursor and captions" brand={brand} enteredMsAgo={timeMs - 300} />
     </AbsoluteFill>
   );
 };
