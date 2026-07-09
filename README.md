@@ -20,6 +20,8 @@ Manual equivalents:
     python feeders/blender/render.py feeders/blender/scenes/logo_reveal.py --out assets/noban/logo-reveal --animation
     node scripts/stage-blender-assets.mjs     # copy rendered sequences into studio/public/
     node scripts/build-launch-props.mjs       # assemble launch video props from the latest demo capture
+    node feeders/comfy/client.mjs hero        # optional: AI hero backdrop (needs ComfyUI Desktop; falls back cleanly)
+    node scripts/render-statics.mjs           # og.mp4 + og.gif + readme.gif
     cd studio && npm run dev            # Remotion Studio
     node scripts/smoke.mjs              # frame-0 still of every composition
 
