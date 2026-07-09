@@ -94,7 +94,13 @@ placeholder so smoke stays green on a clean clone.
 - Emission strength must be 1.0 under `view_transform = 'Standard'`; higher strengths
   clip channels and hue-shift brand colors (violet -> hot pink at 4.0).
 - `bevel_factor_end` draw-on animation NO-OPS on cyclic splines: build outlines as
-  non-cyclic POLY splines with the first point repeated at the end.
+  non-cyclic POLY splines with the first point repeated at the end. AND: the open
+  spline's two flat end-caps butt together at the join and can carve a visible notch
+  at pointed features — run the spline several points PAST its own start so the
+  closing tube swallows both caps (discovered on the DashClaw shield tip).
+- Curve tubes have flat end-caps only (no stroke-linecap round equivalent). Reads as
+  a chisel at display sizes; if a brand needs round caps, add small spheres at the
+  endpoints.
 - Keyframe fcurves live at `action.layers[].strips[].channelbags[].fcurves`
   (`Action.fcurves` is gone).
 - Seamless texture loops: animate the Wave texture's **Phase Offset** by whole 2*pi
@@ -115,6 +121,17 @@ placeholder so smoke stays green on a clean clone.
   (default 47) make heroes reproducible; `--seed N` re-rolls.
 - The fallback is part of the contract: exit 2 + message; `render-statics.mjs` logs
   the procedural fallback. Never make an asset depend on ComfyUI being up.
+
+### Brand-driven effects and fonts (post-DashClaw-onboarding facts)
+- Backdrop wash/glow intensities are brand-driven via the optional `effects` block in
+  brands/<id>.json (brand.ts has the schema + `alphaHex` helper; defaults reproduce
+  the original hardcoded values). LogoReveal consumes it; AnimatedOG/LaunchVideo still
+  carry the hardcoded-alpha pattern and are trivial to convert when a brand needs it.
+  A saturated brand color as a big radial hero-wash is a known failure mode — check
+  the brand's stated rules before leaning on the default.
+- Fonts are per-brand: `loadBrandFonts(brand)` keyed off brand.fonts, loaders
+  registered in fonts.ts. Subset new Google Fonts loaders to 'latin' — an unsubset
+  family fans out to dozens of font requests per render.
 
 ### Process
 - Every generated props file has a builder script as its source of truth
