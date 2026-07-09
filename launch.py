@@ -45,6 +45,12 @@ def main() -> int:
         required=False,
     )
     check(
+        "Capture feeder deps (phase 2)",
+        (ROOT / "feeders" / "capture" / "node_modules").is_dir(),
+        "run: cd feeders/capture && npm install",
+        required=False,
+    )
+    check(
         "ComfyUI server (phase 5 feeder)",
         comfy_running(),
         "not reachable on :8000/:8188",

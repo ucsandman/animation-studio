@@ -11,6 +11,7 @@ Manual equivalents:
 
     cd studio && npm install            # once
     node scripts/fetch-noban-assets.mjs # once: copy noban screenshots (gitignored) into studio/public/
+    node feeders/capture/record-noban-demo.mjs  # record dashboard demo (needs noban stack running)
     cd studio && npm run dev            # Remotion Studio
     node scripts/smoke.mjs              # frame-0 still of every composition
 
@@ -18,3 +19,4 @@ Manual equivalents:
 
     cd studio
     npx remotion render SocialClip ../out/noban/clip.mp4 --props=../props/noban-social-launch.json
+    npx remotion render ProductDemo ../out/noban/demo.mp4 --props=../props/noban-demo.json
