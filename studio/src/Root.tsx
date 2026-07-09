@@ -6,6 +6,7 @@ import { SocialClip, socialClipSchema } from "./templates/SocialClip";
 import { ProductDemo, productDemoSchema } from "./templates/ProductDemo";
 import { LogoReveal, logoRevealSchema } from "./templates/LogoReveal";
 import { LaunchVideo, launchVideoSchema } from "./templates/LaunchVideo";
+import { AnimatedOG, animatedOgSchema } from "./templates/AnimatedOG";
 import { launchTiming } from "./lib/launchTiming";
 
 export const RemotionRoot: React.FC = () => {
@@ -98,6 +99,23 @@ export const RemotionRoot: React.FC = () => {
             props.features.length,
           ).total,
         })}
+      />
+      <Composition
+        id="AnimatedOG"
+        component={AnimatedOG}
+        durationInFrames={240}
+        fps={30}
+        width={1200}
+        height={630}
+        schema={animatedOgSchema}
+        defaultProps={{
+          brandId: "noban",
+          tagline: "CS2 skin arbitrage with guardrails",
+          cta: "Simulate free at noban.gg",
+          heroImage: null,
+          loopSequence: null,
+          loopFrames: 240,
+        }}
       />
     </>
   );
