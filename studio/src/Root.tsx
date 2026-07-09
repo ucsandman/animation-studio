@@ -3,6 +3,7 @@ import React from "react";
 import { Composition } from "remotion";
 import { ComponentGallery } from "./templates/ComponentGallery";
 import { SocialClip, socialClipSchema } from "./templates/SocialClip";
+import { ProductDemo, productDemoSchema } from "./templates/ProductDemo";
 
 export const RemotionRoot: React.FC = () => {
   return (
@@ -35,6 +36,26 @@ export const RemotionRoot: React.FC = () => {
           screenshot: "noban/cockpit.webp",
           cta: "Free in simulation",
         }}
+      />
+      <Composition
+        id="ProductDemo"
+        component={ProductDemo}
+        durationInFrames={300}
+        fps={30}
+        width={1920}
+        height={1080}
+        schema={productDemoSchema}
+        defaultProps={{
+          brandId: "noban",
+          video: null,
+          cta: "Simulate free at noban.gg",
+          telemetry: null,
+        }}
+        calculateMetadata={({props}) => ({
+          durationInFrames: props.telemetry
+            ? Math.ceil((props.telemetry.durationMs / 1000) * 30) + 60
+            : 240,
+        })}
       />
     </>
   );
