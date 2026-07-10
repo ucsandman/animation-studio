@@ -2,9 +2,9 @@
 
 An agent-driven animation studio for Claude Code. You type `/marketing` in your product's repo; the agent onboards your brand, films your app, renders a full marketing asset suite in this engine, and copies the finished files back to you.
 
-![Animated OG loop rendered by the studio](docs/media/demo-og-loop.gif)
+![Animated OG loop rendered by the studio](examples/paperroute/readme.gif)
 
-*An animated OG loop the studio rendered for a real product, from brand tokens alone.*
+*An animated OG loop the studio rendered for a real product, from brand tokens alone. More in [`examples/`](examples/).*
 
 ## The one command
 
@@ -26,6 +26,35 @@ One run produces, in order:
 The order is deliberate: the cheapest composition renders first so brand-token bugs surface before the expensive assets, the demo is filmed once and its footage feeds everything downstream, and audio is scored only after the launch video is picture-locked. The run keeps a manifest on disk, so a died session resumes where it stopped instead of starting over.
 
 Each asset also works standalone: run `/logo-reveal`, `/product-demo`, `/launch-video`, `/audio-track`, `/social-clip`, or `/og-assets` on its own from any repo.
+
+## Example output
+
+Everything below was produced by `/marketing` runs against two real products, unedited. Click a preview to play the video on GitHub.
+
+### noban.gg (CS2 skin arbitrage dashboard)
+
+[![noban launch video preview](examples/noban/launch-still.png)](examples/noban/launch.mp4)
+
+| File | Asset |
+|------|-------|
+| [`launch.mp4`](examples/noban/launch.mp4) | 60s launch video with generated voiceover and music |
+| [`demo.mp4`](examples/noban/demo.mp4) | Product demo with measured camera zooms ([preview still](examples/noban/demo-still.png)) |
+| [`logo-reveal.mp4`](examples/noban/logo-reveal.mp4) | Blender draw-on logo reveal |
+| [`social-launch.mp4`](examples/noban/social-launch.mp4) | X/LinkedIn announcement clip |
+| [`og.mp4`](examples/noban/og.mp4) | Animated OG loop |
+
+### paperroute.gg (wallpaper ad network)
+
+[![paperroute launch video preview](examples/paperroute/launch-still.png)](examples/paperroute/launch.mp4)
+
+| File | Asset |
+|------|-------|
+| [`launch.mp4`](examples/paperroute/launch.mp4) | Launch video with audio |
+| [`demo.mp4`](examples/paperroute/demo.mp4) | Product demo |
+| [`logo-reveal.mp4`](examples/paperroute/logo-reveal.mp4) | Blender logo reveal |
+| [`social-x.mp4`](examples/paperroute/social-x.mp4), [`social-linkedin.mp4`](examples/paperroute/social-linkedin.mp4), [`social-vertical.mp4`](examples/paperroute/social-vertical.mp4) | Per-platform social clips |
+| [`og.png`](examples/paperroute/og.png), [`og.gif`](examples/paperroute/og.gif), [`og.mp4`](examples/paperroute/og.mp4) | OG image, loop, and video |
+| [`readme.gif`](examples/paperroute/readme.gif) | README-sized GIF (the one at the top of this page) |
 
 ## How it works
 
@@ -70,7 +99,17 @@ The agent asks one batched round of questions (brand, destination, audio, platfo
 | `/og-assets` | OG image, animated OG loop, README GIF, social cards |
 | `animation-studio` | Shared background skill: engine workflow, brand onboarding, non-negotiables |
 
-`scripts/install-skills.mjs` copies them into `~/.claude/skills` and rewrites the engine path to wherever you cloned this repo. The `/marketing` pipeline optionally uses UI-polish skills (`impeccable`, `polish`, `frontend-verify`) before filming; without them it simply films your app as-is.
+The pipeline's supporting skills ship too, so nothing in the run dangles:
+
+| Skill | What it does |
+|-------|--------------|
+| `/polish` | Final UI quality pass (alignment, spacing, states, micro-detail) before the demo is filmed |
+| `/frontend-verify` | Headless route verification: console errors, failed requests, text assertions |
+| `/de-vibe` | Removes the AI-generated fingerprint (security tells, slop copy, generic defaults) before anything ships |
+| `/ship` | Verify, docs, secrets scan, commit, push ritual |
+| `/launch` | Announcement drafts per channel (X, LinkedIn, Show HN, email) with approval gates |
+
+`scripts/install-skills.mjs` copies all of them into `~/.claude/skills` and rewrites the engine path to wherever you cloned this repo. It never overwrites a skill you have symlinked. Two optional plugins deepen the UI-polish phase if you have them (`impeccable` and `frontend-design`); without them the pipeline films your app as-is.
 
 ## Repo layout
 
@@ -82,6 +121,7 @@ feeders/capture/   Playwright recorder (product demos)
 feeders/audio/     ElevenLabs client (voiceover + music)
 feeders/comfy/     ComfyUI client (optional AI backdrops)
 skills/            the Claude Code skills that drive all of this
+examples/          real output: full asset suites for two shipped products
 scripts/           props builders, staging, statics, smoke
 props/             generated render props (edit via their builder scripts only)
 docs/PLAYBOOK.md   the operational reference: engine map, onboarding, gotchas
