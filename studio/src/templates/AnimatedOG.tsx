@@ -1,7 +1,7 @@
 import React from 'react';
 import {AbsoluteFill, Img, staticFile, useCurrentFrame, useVideoConfig} from 'remotion';
 import {z} from 'zod';
-import {getBrand} from '../lib/brand';
+import {alphaHex, getBrand} from '../lib/brand';
 import {loadBrandFonts} from '../lib/fonts';
 import {getMark} from '../brands/marks';
 import {FloatBar} from '../components/FloatBar';
@@ -47,7 +47,7 @@ export const AnimatedOG: React.FC<Props> = ({brandId, tagline, cta, heroImage, l
       ) : null}
       <AbsoluteFill
         style={{
-          background: `radial-gradient(70% 60% at 50% 40%, ${brand.colors.brand}30, transparent 72%)`,
+          background: `radial-gradient(70% 60% at 50% 40%, ${brand.colors.brand}${alphaHex(brand.effects.wash)}, transparent 72%)`,
           opacity: glow,
         }}
       />
