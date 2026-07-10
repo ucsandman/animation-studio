@@ -1,4 +1,4 @@
-# Animation Studio
+# Marketing Studio
 
 An agent-driven animation studio for Claude Code. You type `/marketing` in your product's repo; the agent onboards your brand, films your app, renders a full marketing asset suite in this engine, and copies the finished files back to you.
 
