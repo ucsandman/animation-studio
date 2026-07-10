@@ -48,7 +48,6 @@ try {
 // Curated, on-message pending queue built from DashClaw's canonical governance
 // stories (deploy gate, destructive ops, financial, outbound). Field shapes
 // match the live GET /api/actions row exactly.
-const nowIso = new Date().toISOString();
 const inMin = (m) => new Date(Date.now() + m * 60_000).toISOString();
 const agoMin = (m) => new Date(Date.now() - m * 60_000).toISOString();
 const CURATED = [
