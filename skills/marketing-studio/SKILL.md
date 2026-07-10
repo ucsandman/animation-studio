@@ -1,9 +1,9 @@
 ---
-name: animation-studio
+name: marketing-studio
 description: Use when generating any brand video, animation, image, or audio asset (logo reveal, social clip, product demo, launch video, OG image, README GIF, music, voiceover) for any product/repo, or when working inside C:\Projects\animations. Required background for /logo-reveal, /social-clip, /product-demo, /launch-video, /og-assets, /audio-track.
 ---
 
-# Animation Studio
+# Marketing Studio
 
 All brand video/animation/image assets render in ONE engine repo:
 `C:\Projects\animations` (Remotion + Blender + Playwright + ComfyUI feeders).

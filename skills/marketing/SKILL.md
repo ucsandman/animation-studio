@@ -7,7 +7,7 @@ description: Use when the user wants the complete marketing asset suite for a pr
 
 One command produces a product's full asset suite: brand onboarding, UI polish, logo reveal, product demo, launch video with audio, social clips, and OG assets. The individual asset skills own their recipes; this skill owns sequencing, gates, and run state.
 
-**REQUIRED BACKGROUND:** animation-studio (engine-repo workflow shape and non-negotiables). All PLAYBOOK rules apply.
+**REQUIRED BACKGROUND:** marketing-studio (engine-repo workflow shape and non-negotiables). All PLAYBOOK rules apply.
 
 ## Resume check — before anything else
 
@@ -27,7 +27,7 @@ Fresh runs only. Ask everything in a single AskUserQuestion, then run without as
 
 ## Phase 1 — Foundation
 
-1. Shared-repo guard + `python launch.py --check` (animation-studio steps 0–1).
+1. Shared-repo guard + `python launch.py --check` (marketing-studio steps 0–1).
 2. Brand: if `brands/<id>.json` is missing, onboard per PLAYBOOK. Brand-token judgment stays in the main loop — do not delegate it.
 3. Create the run manifest `out/<brand>/marketing/run.json`. It stores BOTH the Phase 0 intake answers (brand, destination, polish flag, audio choice, social config, checkpoint mode) AND one entry per planned asset. Statuses mean exactly this:
    - `planned` — not rendered yet. Gated mode: user approves pre-render stills before the render starts (that is the ONLY user gate per asset).
@@ -71,7 +71,7 @@ Fable is the judge and orchestrator; it holds only the intake answers, the manif
 1. **Brand onboarding stays in the main loop** — one-time judgment work, exactly what Fable is for. If `brands/<id>.json` is missing, derive tokens from the product repo (DESIGN.md, tailwind, CSS vars per PLAYBOOK) and fold any underivable values into the Phase 0 intake batch — never a mid-run question to an absent user.
 2. **Phase 2, if opted in, goes to one `claude-opus-4-8` executor** that runs impeccable → polish → frontend-verify in the product repo and returns before/after screenshots plus the verify result as raw data. Fable judges those before any capture starts — the polish pass is heavy UI work and does not belong in the judge's context.
 3. **One executor subagent per asset, strictly sequential** (the engine repo and CPU rules from Phase 3 apply unchanged). Models, always explicit: `claude-opus-4-8` for /product-demo and /launch-video (capture choreography and copywriting need judgment); `claude-sonnet-5` for /logo-reveal, /audio-track, /social-clip, /og-assets (recipe execution).
-4. **Dispatch prompt contract**: tell the executor to read the asset's SKILL.md, the animation-studio skill, and the PLAYBOOK gotchas before acting; give it the brand id, manifest path, and intake answers; have it execute the recipe through full render and return raw data — output path, 3 extracted still paths, and any deviations. No prose reports.
+4. **Dispatch prompt contract**: tell the executor to read the asset's SKILL.md, the marketing-studio skill, and the PLAYBOOK gotchas before acting; give it the brand id, manifest path, and intake answers; have it execute the recipe through full render and return raw data — output path, 3 extracted still paths, and any deviations. No prose reports.
 5. **Judge protocol per asset**: Fable Reads the returned stills and judges against the brand's `voice` rules, composition quality, and copy (no em dashes, no hype). Approve → manifest `approved`, next asset. Problems → send a numbered correction list via SendMessage to the SAME executor (its context is intact; never respawn a fresh executor to fix its own work). If the resume fails because the executor's transcript is gone (it happens), spawn a MINIMAL corrections executor whose prompt carries the complete defect list plus file-level context — never re-run the whole asset recipe. Maximum 3 correction rounds per asset; after that, record the asset as `rendered` with judge notes and move on — the user adjudicates it in the final gallery.
 6. **This mode is full-auto by definition** — Fable replaces the per-asset user gates as a stronger judge. The user still sees the final gallery (Phase 5 is unchanged), and delivery + commits stay in the main loop.
 7. **Fable never spawns Fable**, and the 3-Fable session cap applies. Executors are the fleet; the judge is singular.

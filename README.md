@@ -25,6 +25,14 @@ One run produces, in order:
 
 The order is deliberate: the cheapest composition renders first so brand-token bugs surface before the expensive assets, the demo is filmed once and its footage feeds everything downstream, and audio is scored only after the launch video is picture-locked. The run keeps a manifest on disk, so a died session resumes where it stopped instead of starting over.
 
+Around those assets, the pipeline adds:
+
+- **A derived content brief.** The agent reads your product repo (README, routes, landing page) and synthesizes the story — hooks, ranked benefit-led features, per-act narration, per-platform copy — into a validated `brief.json` that every builder consumes. You approve the whole story on a storyboard page before anything renders.
+- **A copy linter.** Every generated line is gated for em dashes, hype, and AI-slop vocabulary before it can reach a render.
+- **A film grade and per-brand motion personality.** Grain, vignette, and bloom tuned per brand, and a `motion` token block so each brand's choreography feels like itself.
+- **An export matrix.** The picture-locked launch video and social clips fan into 16:9, 9:16, 1:1, and 4:5 through responsive layout (not crops), with burned-caption variants for muted autoplay and SRT/VTT sidecars.
+- **Mission Control.** A local click-to-approve gallery: watch assets land, approve or request a redo with a note, and the run reacts — no terminal required.
+
 Each asset also works standalone: run `/logo-reveal`, `/product-demo`, `/launch-video`, `/audio-track`, `/social-clip`, or `/og-assets` on its own from any repo.
 
 ## Example output
@@ -97,7 +105,7 @@ The agent asks one batched round of questions (brand, destination, audio, platfo
 | `/audio-track` | Voiceover and music for any video, or standalone audio |
 | `/social-clip` | Short feature clips sized per platform |
 | `/og-assets` | OG image, animated OG loop, README GIF, social cards |
-| `animation-studio` | Shared background skill: engine workflow, brand onboarding, non-negotiables |
+| `marketing-studio` | Shared background skill: engine workflow, brand onboarding, non-negotiables |
 
 The pipeline's supporting skills ship too, so nothing in the run dangles:
 

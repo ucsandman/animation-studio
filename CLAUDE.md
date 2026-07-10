@@ -1,4 +1,4 @@
-# animations: agent-driven animation studio
+# animations: agent-driven marketing studio
 
 Remotion (studio/) renders all final video for ALL products/brands; assets are copied
 out to the product's repo at the end. brands/<id>.json holds per-product tokens
@@ -21,5 +21,8 @@ Rules:
   final assets are not done until the user saw them.
 - Smoke check before claiming done: node scripts/smoke.mjs (every composition listed).
 - Generated props JSON is edited only via its builder script (scripts/build-*-props.mjs).
+- Asset copy traces to out/<brand>/marketing/brief.json (agent-synthesized, gated by
+  scripts/lint-copy.mjs and the storyboard approval); builders overlay brief copy —
+  never hand-edit copy into generated props.
 - out/, assets/, studio/public/*/ are gitignored build products.
 - Blender via BLENDER_PATH in .env; ComfyUI on :8000/:8188 with documented fallback.

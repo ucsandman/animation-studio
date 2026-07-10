@@ -5,14 +5,14 @@ description: Use when the user wants a product demo video / screen recording wit
 
 # Product Demo
 
-**REQUIRED BACKGROUND:** animation-studio skill. Work in `C:\Projects\animations`.
+**REQUIRED BACKGROUND:** marketing-studio skill. Work in `C:\Projects\animations`.
 
 Produces: `out/<brand>/demo.mp4` — real app footage with synthetic smooth cursor,
 focus-driven camera zooms, and step captions, plus a brand end card.
 
 ## Recipe
 
-1. Toolchain + brand check per animation-studio. The product's app must be RUNNING
+1. Toolchain + brand check per marketing-studio. The product's app must be RUNNING
    (ask the user to start it; never start their stack yourself).
 2. Capture script: `feeders/capture/record-<brand>-demo.mjs`. For a new product copy
    `record-noban-demo.mjs`: viewport wide enough for the app, `deviceScaleFactor: 2`,
@@ -26,5 +26,5 @@ focus-driven camera zooms, and step captions, plus a brand end card.
    Read them, set focus {x,y,w,h} centers/sizes in the capture script, re-capture (~20s).
 5. Proof stills of the `ProductDemo` composition at one frame per view; check camera
    framing, cursor plausibility, captions, brightness.
-6. Render, deliver per animation-studio. Known accepted aesthetic: cursor may leave
+6. Render, deliver per marketing-studio. Known accepted aesthetic: cursor may leave
    frame during zoom holds (see PLAYBOOK for the redline options if the user objects).

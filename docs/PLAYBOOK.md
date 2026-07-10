@@ -1,4 +1,4 @@
-# Animation Studio Playbook
+# Marketing Studio Playbook
 
 The operational reference for generating brand assets with this repo. The user-level
 skills (/logo-reveal, /social-clip, /product-demo, /launch-video, /og-assets) point

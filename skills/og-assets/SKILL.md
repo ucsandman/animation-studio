@@ -5,14 +5,14 @@ description: Use when the user wants OG images, link-preview assets, animated OG
 
 # OG Assets
 
-**REQUIRED BACKGROUND:** animation-studio skill. Work in `C:\Projects\animations`.
+**REQUIRED BACKGROUND:** marketing-studio skill. Work in `C:\Projects\animations`.
 
 Produces: `out/<brand>/og.mp4` (8s seamless 1200x630 loop), `og.gif`, `readme.gif`
 (600x315), optionally backed by a ComfyUI AI hero texture.
 
 ## Recipe
 
-1. Toolchain + brand check per animation-studio. Background loop staged for the brand
+1. Toolchain + brand check per marketing-studio. Background loop staged for the brand
    (Blender `background_loop` scene; PLAYBOOK seam rules) — or run with it null.
 2. Optional AI hero: `node feeders/comfy/client.mjs hero [--seed N]` (needs ComfyUI
    Desktop up + a checkpoint; exit 2 = fine, procedural fallback is spec-compliant).
@@ -25,4 +25,4 @@ Produces: `out/<brand>/og.mp4` (8s seamless 1200x630 loop), `og.gif`, `readme.gi
    legibility (extract frame 0 via ffmpeg if the gif exceeds Read limits).
 5. Size check: GIFs are heavy; prefer og.mp4 for social embeds. For READMEs going to
    GitHub keep the gif under ~10MB (`--every-nth-frame=3`, lower `--scale`).
-6. Deliver per animation-studio.
+6. Deliver per marketing-studio.

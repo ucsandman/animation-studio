@@ -5,7 +5,7 @@ description: Use when the user wants a full launch video / hero video / 30-90s p
 
 # Launch Video
 
-**REQUIRED BACKGROUND:** animation-studio skill. Work in `C:\Projects\animations`.
+**REQUIRED BACKGROUND:** marketing-studio skill. Work in `C:\Projects\animations`.
 
 Produces: `out/<brand>/launch.mp4` — ~45s five-act composition: logo reveal ->
 hook headline -> live demo -> feature beats (1-3) -> end card, over the brand's
@@ -26,5 +26,5 @@ background loop.
 4. Proof stills: one frame per act (logo/hook/demo/each feature/end card), Read all,
    iterate copy and framing until intentional.
 5. `npx remotion render LaunchVideo out/<brand>/launch.mp4 --props=props/<brand>-launch.json`
-   (~1350 frames, minutes). Deliver per animation-studio.
+   (~1350 frames, minutes). Deliver per marketing-studio.
 6. Audio: run the audio-track skill to add music + voiceover to the render.

@@ -5,7 +5,7 @@ description: Use when the user wants a logo reveal / logo animation / brand intr
 
 # Logo Reveal
 
-**REQUIRED BACKGROUND:** animation-studio skill (engine location, brand onboarding,
+**REQUIRED BACKGROUND:** marketing-studio skill (engine location, brand onboarding,
 PLAYBOOK gotchas). Work happens in `C:\Projects\animations`.
 
 Produces: `out/<brand>/logo-reveal.mp4` — 3s Blender 3D draw-on of the brand mark
@@ -13,7 +13,7 @@ composited in Remotion over the brand backdrop with wordmark + CTA (5s total).
 
 ## Recipe
 
-1. Toolchain + brand check per animation-studio (onboard the brand first if new).
+1. Toolchain + brand check per marketing-studio (onboard the brand first if new).
 2. Blender scene: `feeders/blender/scenes/logo_reveal_<brand>.py`. If missing, copy
    `logo_reveal.py` (noban) and swap ONLY the geometry builders to the new mark's
    SVG shapes — materials/choreography/camera/alpha/args are brand-agnostic. Read the
@@ -27,4 +27,4 @@ composited in Remotion over the brand backdrop with wordmark + CTA (5s total).
    `--props='{"brandId":"<id>","sequence":"<id>/logo-reveal","frameCount":90,"cta":"<brand cta>"}'`.
    Inspect stills at frames 30/80/130 (mid-draw / wordmark in / full lockup, CTA in
    the brand's accent-positive color).
-6. Deliver per animation-studio (copy into calling repo + send to user).
+6. Deliver per marketing-studio (copy into calling repo + send to user).

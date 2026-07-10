@@ -5,7 +5,7 @@ description: Use when the user wants music, voiceover, narration, or a soundtrac
 
 # Audio Track
 
-**REQUIRED BACKGROUND:** animation-studio skill. Work in `C:\Projects\animations`.
+**REQUIRED BACKGROUND:** marketing-studio skill. Work in `C:\Projects\animations`.
 Read the PLAYBOOK's Audio section first (endpoints, ducking, manifest contract).
 
 Two modes; pick by what the user wants:
@@ -20,7 +20,7 @@ regenerate blindly. Free tier returns 402; Starter or above required.
 
 ## Recipe A: video soundtrack
 
-1. Shared-repo guard + toolchain per animation-studio.
+1. Shared-repo guard + toolchain per marketing-studio.
 2. Copy source of truth: `scripts/build-<brand>-audio.mjs` (copy the noban one for a
    new brand). VO lines are keyed by act, written FOR THE EAR ("dot gg", not ".gg"),
    one line per act, terse. Music prompt describes the brand's sonic character.
@@ -34,7 +34,7 @@ regenerate blindly. Free tier returns 402; Starter or above required.
 
 ## Recipe B: standalone audio
 
-1. Shared-repo guard per animation-studio (the feeder lives in the engine repo even
+1. Shared-repo guard per marketing-studio (the feeder lives in the engine repo even
    for standalone output).
 2. Music: `node feeders/audio/client.mjs music --prompt "<sonic character>" --length-ms <n> --out out/<brand>/<name>.mp3`
    (exact-length, commercially licensed on paid plans; 3s-120s).
@@ -42,4 +42,4 @@ regenerate blindly. Free tier returns 402; Starter or above required.
    then `node feeders/audio/client.mjs vo --script <json> --out out/<brand>/`.
    Durations print as `... OK: <name> <ms>ms`; `probe --file <mp3>` re-measures.
 3. Listen-proof: SEND the mp3(s) to the user, then copy approved files into the
-   calling repo per the animation-studio delivery contract.
+   calling repo per the marketing-studio delivery contract.
