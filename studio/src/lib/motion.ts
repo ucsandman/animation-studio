@@ -21,6 +21,9 @@ export const DEFAULT_MOTION: Motion = {
   exuberance: 0.35,
   stagger: 0.5,
   overshoot: 0.25,
+  parallax: 0,
+  settle: 0,
+  textReveal: 'spring',
 };
 
 // Stiffness/mass are held at Remotion's legacy spring defaults (what every

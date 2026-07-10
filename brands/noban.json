@@ -27,7 +27,10 @@
     "tempo": 1.1,
     "exuberance": 0.15,
     "stagger": 0.5,
-    "overshoot": 0.1
+    "overshoot": 0.1,
+    "parallax": 0.25,
+    "settle": 0.3,
+    "textReveal": "maskWipe"
   },
   "voice": "Instrument-grade trading terminal that speaks CS2. Terse, factual, no hype. Profit is gold, never green. Green means simulation/safe only. Red means loss/live/danger. Not esports-neon."
 }

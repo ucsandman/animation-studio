@@ -38,7 +38,10 @@
     "tempo": 1.15,
     "exuberance": 0.3,
     "stagger": 0.6,
-    "overshoot": 0.2
+    "overshoot": 0.2,
+    "parallax": 0.25,
+    "settle": 0.35,
+    "textReveal": "charStagger"
   },
   "voice": "Governance runtime that sits between an agent's intent and the real world. Serious, precise, trustworthy. Verbs: intercept, enforce, record, verify. No hype, no exclamation marks. Brand orange #f97316 is a SIGNAL, never decoration: the mark, a focused state, a primary CTA, attention required. Never a hero wash or ambient glow-spam. The accent 'profit' slot is the lighter brand orange #fb923c and is reserved for CTA text. Dark mode only. Not generic SaaS, not consumer-AI, not heavy-enterprise, not crypto/web3."
 }

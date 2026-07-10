@@ -5,14 +5,23 @@
 // calculateMetadata reads (Root.tsx); we merge them into a temp props file per
 // platform and pass --props.
 //
-// Usage: node scripts/render-matrix.mjs <brand> [--comp LaunchVideo|SocialClip] [--stills-only]
+// Usage: node scripts/render-matrix.mjs <brand> [--comp LaunchVideo|SocialClip]
+//          [--only <platformId>] [--stills-only] [--webm]
 //   --stills-only   render a single text-bearing still per platform (layout proof,
 //                   no CPU for full video). Otherwise renders full .mp4 per platform.
+//   --only <id>     render just the one platform row matching scripts/platforms.json's
+//                   `id` (e.g. social-1x1) — cheap smoke-test path, combinable with --comp.
+//   --webm          additionally transcode each rendered mp4 to VP9/Opus webm
+//                   (skipped with a log line, never a failure, if the bundled ffmpeg
+//                   lacks libvpx-vp9/libopus — probed once via `remotion ffmpeg -encoders`).
 //
-// Outputs land in out/<brand>/matrix/<id>.mp4 (or .png for stills). If
-// out/<brand>/marketing/run.json exists, an `exports` array is appended/updated with
-// {id, path, width, height, bytes} per rendered file (atomic temp+rename); when no
-// run.json exists the manifest step is silently skipped.
+// Outputs land in out/<brand>/matrix/<id>.mp4 (or .png for stills; plus <id>.webm when
+// --webm is supported). Every rendered mp4 is remuxed in place for faststart (moov atom
+// moved to the front) via a temp-file-then-rename swap so partial writes never clobber
+// the original. If out/<brand>/marketing/run.json exists, an `exports` array is
+// appended/updated with {id, path, width, height, bytes} per rendered file (atomic
+// temp+rename, bytes reflect the post-faststart size); when no run.json exists the
+// manifest step is silently skipped.
 //
 // Captions: platforms flagged {captioned:true} (the muted-autoplay 9:16/1:1 rows)
 // also get an extra <id>-captioned variant with the VO burned into on-screen
@@ -20,7 +29,7 @@
 // line). LaunchVideo reads caption text from the merged `audio` manifest; SocialClip
 // from a merged `voLines` array (it has no audio track).
 import {execSync} from 'node:child_process';
-import {existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync} from 'node:fs';
+import {existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
 import {dirname, join} from 'node:path';
 import {makeBaseLoader, withFormat} from './lib/matrix-props.mjs';
@@ -36,11 +45,14 @@ const studio = join(root, 'studio');
 const args = process.argv.slice(2);
 const brand = args.find((a) => !a.startsWith('--'));
 const stillsOnly = args.includes('--stills-only');
+const webmFlag = args.includes('--webm');
 const compIdx = args.indexOf('--comp');
 const compFilter = compIdx >= 0 ? args[compIdx + 1] : null;
+const onlyIdx = args.indexOf('--only');
+const onlyFilter = onlyIdx >= 0 ? args[onlyIdx + 1] : null;
 
 if (!brand) {
-  console.error('usage: node scripts/render-matrix.mjs <brand> [--comp LaunchVideo|SocialClip] [--stills-only]');
+  console.error('usage: node scripts/render-matrix.mjs <brand> [--comp LaunchVideo|SocialClip] [--only <id>] [--stills-only] [--webm]');
   process.exit(1);
 }
 
@@ -61,6 +73,48 @@ mkdirSync(propsDir, {recursive: true});
 
 const loadBase = makeBaseLoader(root, brand);
 
+// Probe the bundled ffmpeg for VP9/Opus once, only when --webm was requested. Never
+// fails the run: unsupported means webm transcoding is skipped per-file, logged once.
+let webmSupported = false;
+if (webmFlag && !stillsOnly) {
+  const encoders = execSync('npx remotion ffmpeg -encoders', {cwd: studio, encoding: 'utf8'});
+  webmSupported = /libvpx-vp9/.test(encoders) && /libopus/.test(encoders);
+  if (!webmSupported) {
+    console.log('matrix: --webm requested but the bundled ffmpeg lacks libvpx-vp9/libopus — webm transcoding will be skipped for every file');
+  }
+}
+
+// Remux an mp4 in place for faststart (moov atom moved to the front, so playback can
+// start before the whole file downloads). Renders via a temp file then swaps it in —
+// Remotion's ffmpeg build has no in-place edit, and a temp+rename avoids ever leaving
+// a partially-written file at the real path.
+const remuxFaststart = (mp4Path) => {
+  const tmpPath = `${mp4Path}.faststart.tmp.mp4`;
+  execSync(`npx remotion ffmpeg -y -i "${mp4Path}" -c copy -movflags +faststart "${tmpPath}"`, {
+    cwd: studio,
+    stdio: 'inherit',
+  });
+  if (!existsSync(tmpPath)) {
+    console.error(`FAILED: faststart remux did not produce ${tmpPath}`);
+    process.exit(1);
+  }
+  unlinkSync(mp4Path);
+  renameSync(tmpPath, mp4Path);
+};
+
+// Transcode an mp4 to VP9/Opus webm alongside it. Only called when webmSupported.
+const transcodeWebm = (mp4Path, webmPath) => {
+  execSync(
+    `npx remotion ffmpeg -y -i "${mp4Path}" -c:v libvpx-vp9 -b:v 0 -crf 36 -c:a libopus "${webmPath}"`,
+    {cwd: studio, stdio: 'inherit'},
+  );
+  if (!existsSync(webmPath)) {
+    console.error(`FAILED: webm transcode did not produce ${webmPath}`);
+    process.exit(1);
+  }
+  return statSync(webmPath).size;
+};
+
 // Render one variant (props already merged), verify it landed, return its manifest row.
 const renderVariant = (id, comp, width, height, props) => {
   const propsPath = join(propsDir, `${id}.json`);
@@ -76,6 +130,16 @@ const renderVariant = (id, comp, width, height, props) => {
     console.error(`FAILED: ${outFile} was not produced`);
     process.exit(1);
   }
+
+  if (!stillsOnly) {
+    remuxFaststart(outFile);
+    if (webmFlag && webmSupported) {
+      const webmFile = join(outDir, `${id}.webm`);
+      const webmBytes = transcodeWebm(outFile, webmFile);
+      console.log(`matrix: ${id} webm -> out/${brand}/matrix/${id}.webm (${webmBytes} bytes)`);
+    }
+  }
+
   return {id, path: `out/${brand}/matrix/${id}.${ext}`, width, height, bytes: statSync(outFile).size};
 };
 
@@ -92,6 +156,7 @@ const withCaptions = (comp, base) =>
 const rendered = [];
 for (const p of platforms) {
   if (compFilter && p.comp !== compFilter) continue;
+  if (onlyFilter && p.id !== onlyFilter) continue;
   const base = withFormat(loadBase(p.comp), p.width, p.height);
   rendered.push(renderVariant(p.id, p.comp, p.width, p.height, base));
 
@@ -107,7 +172,7 @@ for (const p of platforms) {
 }
 
 if (rendered.length === 0) {
-  console.error(`no platforms matched${compFilter ? ` --comp ${compFilter}` : ''}`);
+  console.error(`no platforms matched${compFilter ? ` --comp ${compFilter}` : ''}${onlyFilter ? ` --only ${onlyFilter}` : ''}`);
   process.exit(1);
 }
 

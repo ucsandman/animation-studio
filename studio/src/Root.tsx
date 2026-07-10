@@ -80,6 +80,7 @@ export const RemotionRoot: React.FC = () => {
           sequence: null,
           frameCount: 90,
           cta: "Simulate free at noban.gg",
+          motionOverride: null,
         }}
       />
       <Composition
@@ -100,6 +101,7 @@ export const RemotionRoot: React.FC = () => {
           assets: {logoSequence: null, logoFrames: 90, loopSequence: null, loopFrames: 240},
           audio: null,
           burnCaptions: false,
+          motionOverride: null,
         }}
         calculateMetadata={({props}) => ({
           durationInFrames: launchTiming(

@@ -5,6 +5,24 @@ import paperroute from '../../../brands/paperroute.json';
 
 const hex = z.string().regex(/^#[0-9a-f]{6}$/i, 'expected #rrggbb hex color');
 
+// Extracted so takes-based variant scripts (scripts/render-variants.mjs) can build
+// a partial per-render override without duplicating the field list; brandSchema's
+// `motion` field below still carries the brand-wide default.
+const motionSchema = z.object({
+  tempo: z.number().min(0.5).max(2),
+  exuberance: z.number().min(0).max(1),
+  stagger: z.number().min(0).max(1),
+  overshoot: z.number().min(0).max(1),
+  parallax: z.number().min(0).max(1).default(0),
+  settle: z.number().min(0).max(1).default(0),
+  textReveal: z.enum(['spring', 'maskWipe', 'blurIn', 'charStagger']).default('spring'),
+});
+
+/** Partial motion knobs a template's `motionOverride` prop merges over brand.motion
+ * (see LogoReveal/LaunchVideo schemas) — the render-variants hero-take mechanism.
+ * Only motion may vary per-take; brand colors are never overridable (voice rules). */
+export const motionOverrideSchema = motionSchema.partial();
+
 export const brandSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
@@ -60,17 +78,24 @@ export const brandSchema = z.object({
   // spring. `tempo` is a duration multiplier for entrances/transitions (>1 brisker);
   // `exuberance` maps to spring bounciness (0 = critically-damped/no overshoot,
   // 1 = visibly bouncy); `stagger` scales inter-element delays; `overshoot` scales
-  // how far a bouncy entrance travels past its rest point. Defaults reproduce the
-  // prior smooth, no-overshoot feel; the math lives in lib/motion.ts and templates
-  // consume it via `brand.motion`.
-  motion: z
-    .object({
-      tempo: z.number().min(0.5).max(2),
-      exuberance: z.number().min(0).max(1),
-      stagger: z.number().min(0).max(1),
-      overshoot: z.number().min(0).max(1),
-    })
-    .default({tempo: 1, exuberance: 0.35, stagger: 0.5, overshoot: 0.25}),
+  // how far a bouncy entrance travels past its rest point. `parallax` (0 = flat)
+  // scales the slow depth-layer drift that gives flat comps believable depth, and
+  // `settle` (0 = hard cut) scales the overshoot-and-settle kicker applied right
+  // after each act cut so cuts land like a real operator, not a linear ease. BOTH
+  // default to 0 so a brand that omits them renders byte-identically to a flat cut;
+  // the math lives in lib/motion.ts + lib/depth.ts and templates consume it via
+  // `brand.motion`. `textReveal` picks the per-brand headline entrance preset
+  // (lib/textReveal.ts); it DEFAULTS to 'spring', the extracted legacy word math, so
+  // a brand that omits it renders byte-identically.
+  motion: motionSchema.default({
+    tempo: 1,
+    exuberance: 0.35,
+    stagger: 0.5,
+    overshoot: 0.25,
+    parallax: 0,
+    settle: 0,
+    textReveal: 'spring',
+  }),
   voice: z.string().min(1),
 });
 

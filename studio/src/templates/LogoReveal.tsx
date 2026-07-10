@@ -5,7 +5,7 @@ import {
   useVideoConfig,
 } from 'remotion';
 import {z} from 'zod';
-import {alphaHex, getBrand} from '../lib/brand';
+import {alphaHex, getBrand, motionOverrideSchema} from '../lib/brand';
 import {loadBrandFonts} from '../lib/fonts';
 import {brandSpring, entrance} from '../lib/motion';
 import {getMark} from '../brands/marks';
@@ -17,18 +17,24 @@ export const logoRevealSchema = z.object({
   sequence: z.string().nullable(),
   frameCount: z.number().int().positive(),
   cta: z.string(),
+  // Optional per-render motion-knob override (scripts/render-variants.mjs hero
+  // takes). Nullable, defaults null, so a normal render/smoke is byte-identical to
+  // the brand's own motion — same nullable-override pattern LaunchVideo's
+  // formatWidth/formatHeight use.
+  motionOverride: motionOverrideSchema.nullable().default(null),
 });
 
 type Props = z.infer<typeof logoRevealSchema>;
 
-export const LogoReveal: React.FC<Props> = ({brandId, sequence, frameCount, cta}) => {
+export const LogoReveal: React.FC<Props> = ({brandId, sequence, frameCount, cta, motionOverride}) => {
   const frame = useCurrentFrame();
   const {fps} = useVideoConfig();
   const brand = getBrand(brandId);
+  const motion = motionOverride ? {...brand.motion, ...motionOverride} : brand.motion;
   const fonts = loadBrandFonts(brand);
   const Mark = getMark(brand.id);
-  const wordmarkIn = brandSpring(frame, fps, brand.motion, {delayFrames: 66});
-  const ctaIn = entrance(frame, fps, brand.motion, {delayFrames: 96, durFrames: 14});
+  const wordmarkIn = brandSpring(frame, fps, motion, {delayFrames: 66});
+  const ctaIn = entrance(frame, fps, motion, {delayFrames: 96, durFrames: 14});
   return (
     <AbsoluteFill style={{backgroundColor: brand.colors.bg}}>
       <AbsoluteFill

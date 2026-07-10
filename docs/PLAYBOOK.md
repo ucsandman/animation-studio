@@ -35,6 +35,10 @@ repo. Assets are copied out to the calling repo at the end.
 | Contact sheets | `scripts/contact-sheet.mjs <brand> <Comp>` | act-boundary stills + sheet HTML -> out/<brand>/marketing/stills/; Mission Control shows the strip |
 | Footage cache | `scripts/lib/cache.mjs`; capture scripts + stage-blender-assets consult it | key = product git HEAD+porcelain + script source + config; `--force` re-captures; caching disabled when product git state is unresolvable |
 | SFX library | `scripts/build-sfx.mjs` (one-time, idempotent) | ElevenLabs sound-generation -> assets/sfx/ + studio/public/sfx/ (whoosh/tick/riser, exit 2 = silent fallback); cues derived at render from launchTiming via `studio/src/lib/sfxCues.ts`, gated by `sfx.enabled` in the audio manifest (builder flips it only when files are staged) |
+| Quality judges | `scripts/judge-av-sync.mjs`, `judge-demo-pacing.mjs`, `judge-palette.mjs <brand>` | Phase-4 advisors (exit 0 + JSON verdicts; `--strict` gates): VO overruns/caption dwell, dead-air (raw-capture footage means dead = literally frozen frames, threshold 0.2), forbidden-color washes with high/low confidence + `--mask-region` (product-UI false-positive guard) |
+| Encode budgets | `scripts/check-budgets.mjs <brand>` (hard gate, exit 1 on OVER) | byte budgets per asset class; render-matrix now faststart-remuxes every mp4 and `--webm` adds a VP9/Opus transcode |
+| Hook A/B | `scripts/render-hook-variants.mjs <brand> [--headlines '<json>']` | renders the hook act per headline (brief.json altHeadlines or flag) -> out/<brand>/marketing/hooks/ + picker.html; registers run.json variants[] for Mission Control's radio pick |
+| Hero takes | `scripts/render-variants.mjs <brand> <logo-reveal\|launch-hook> [--takes N]` | brand-safe motion-knob takes via nullable `motionOverride` prop (exuberant take floors at 0.65 — below ~0.55 the spring is overdamped and deltas render invisible); registers variants[] |
 
 Compositions: SocialClip, ProductDemo, LogoReveal, LaunchVideo, AnimatedOG,
 ComponentGallery (test bench). All schemas carry `brandId`; templates resolve
@@ -49,7 +53,10 @@ placeholder so smoke stays green on a clean clone.
    brand's color RULES in `voice` (e.g. noban: profit gold NEVER green). Optional
    zod-defaulted blocks: `grade` (FilmGrade grain/vignette/bloom/aberration/letterbox —
    zero bloom for brands whose voice forbids glow) and `motion` (tempo/exuberance/
-   stagger/overshoot — the brand's choreography personality; rest positions never change).
+   stagger/overshoot plus `parallax`/`settle` depth-and-cut kickers defaulting to 0 and
+   a `textReveal` preset [spring|maskWipe|blurIn|charStagger] defaulting to spring —
+   the brand's choreography personality; rest positions and zeroed defaults never
+   change existing output).
 2. Register it in `studio/src/lib/brand.ts` (import + registry entry).
 3. Mark component: `studio/src/brands/<Brand>Mark.tsx` recreating the product's logo
    SVG (viewBox-normalized, `{size, color}` props, `currentColor` strokes), then

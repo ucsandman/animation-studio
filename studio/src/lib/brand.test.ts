@@ -66,7 +66,32 @@ describe('getBrand', () => {
       fonts: getBrand('noban').fonts,
       voice: 'x',
     });
-    expect(parsed.motion).toEqual({tempo: 1, exuberance: 0.35, stagger: 0.5, overshoot: 0.25});
+    expect(parsed.motion).toEqual({
+      tempo: 1,
+      exuberance: 0.35,
+      stagger: 0.5,
+      overshoot: 0.25,
+      parallax: 0,
+      settle: 0,
+      textReveal: 'spring',
+    });
+  });
+
+  it('defaults parallax and settle to 0 when a brand motion block omits them', () => {
+    // A brand that provides tempo/exuberance/stagger/overshoot but no depth cues
+    // must still get parallax 0 / settle 0 so its output stays a flat, hard cut.
+    const parsed = brandSchema.parse({
+      id: 'x',
+      name: 'x',
+      tagline: 'x',
+      url: 'x',
+      colors: getBrand('noban').colors,
+      fonts: getBrand('noban').fonts,
+      motion: {tempo: 1, exuberance: 0.4, stagger: 0.5, overshoot: 0.2},
+      voice: 'x',
+    });
+    expect(parsed.motion.parallax).toBe(0);
+    expect(parsed.motion.settle).toBe(0);
   });
 
   it('carries each brand a motion personality on-voice with its rules', () => {

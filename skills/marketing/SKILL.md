@@ -50,7 +50,7 @@ The engine repo is shared mutable state (props builders, registries, render queu
 |---|-------|-------------------|
 | 1 | /logo-reveal | Cheapest comp — surfaces brand-token bugs before the expensive assets |
 | 2 | /product-demo | Films the (now polished) UI; footage feeds everything downstream |
-| 3 | /launch-video | Picture-lock the hero video (composes demo + logo + copy) |
+| 3 | /launch-video | Picture-lock the hero video (composes demo + logo + copy). Before locking, when the brief carries altHeadlines: `node scripts/render-hook-variants.mjs <brand>` renders the competing hook takes and registers them as Mission Control variants — pick the winner there, then lock. Optionally `node scripts/render-variants.mjs <brand> logo-reveal` for hero takes. |
 | 4 | /audio-track | Score the locked launch video (music/VO per intake) and merge |
 | 5 | /social-clip × N | Reuse demo/logo footage per platform; add stings if audio opted in |
 | 6 | /og-assets | Statics + README GIF pulled from final footage |
@@ -89,6 +89,7 @@ Fable never goes inside a workflow (the model-guard hook blocks it in `parallel(
 ## Phase 4 — Final QA
 
 1. `node scripts/smoke.mjs` — must pass.
+1b. Mechanical judges before any agent sweep (cheap, run all four): `node scripts/judge-av-sync.mjs <brand>` (VO overruns/caption dwell), `node scripts/judge-demo-pacing.mjs <brand>` (dead air), `node scripts/judge-palette.mjs <brand> <still>` (forbidden colors; low-confidence findings are product-UI suspects, treat per step 2's false-positive rule), and `node scripts/check-budgets.mjs <brand>` (hard size gate — an OVER blocks delivery). Their JSON reports feed the judge; only findings the reports can't decide go to the agent sweep.
 2. Brand-compliance sweep: one Sonnet subagent reviews a still from every asset against the brand's `voice` rules (e.g. noban: profit gold `#d6c23c`, never green). Re-render only violators — but VERIFY findings against the product repo's source first. Product screenshots inside assets show the PRODUCT's own fonts/tokens, not the engine brand's stand-ins; a reviewer expecting the engine's mono will misread the product's mono as a violation (paperroute run 2026-07-10: 4 of 5 sweep findings were this exact false positive; the fifth was a real product bug, fixed in the product repo, no asset re-render needed).
 
 ## Phase 5 — Delivery
