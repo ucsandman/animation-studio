@@ -1,0 +1,27 @@
+{
+  "skill_name": "de-vibe",
+  "evals": [
+    {
+      "id": 0,
+      "name": "full-de-vibe-before-ship",
+      "prompt": "I built this app with Claude over the weekend and I'm shipping it to my first paying customer tomorrow. Can you de-vibe it first? I don't want it to look or break like an AI-generated app.",
+      "expected_output": "Categorized audit report with file:line evidence covering security (committed .env, wildcard CORS, hardcoded key), reliability (empty catch, console.log debris), repo tells (tracked .claude/, CLAUDE.md), and design tells (indigo gradient, Inter, 'Create Next App' title, buzzword copy). Then auto-fixes the mechanical items, asks before auth-touching ones, proposes an identity direction, and verifies the app still runs.",
+      "files": ["fixture: vibe-mart sample app"],
+      "assertions": "see de-vibe-workspace/iteration-1/eval-0-full-de-vibe/eval_metadata.json (16 assertions)"
+    },
+    {
+      "id": 1,
+      "name": "audit-only-question",
+      "prompt": "hey does this repo look vibe coded to you? a potential client is going to look through the source tomorrow and I want to know what would give it away",
+      "expected_output": "Audit report only — findings with evidence, categories that came back clean, and a prioritized 'what a reviewer would notice first' framing. Should NOT start rewriting code, because the user asked a question rather than requesting changes.",
+      "files": ["fixture: vibe-mart sample app"]
+    },
+    {
+      "id": 2,
+      "name": "landing-page-de-slop",
+      "prompt": "my landing page looks like every other AI-generated site. make it not look like that but don't redesign the whole thing, I like the layout",
+      "expected_output": "Focused design/copy pass: replaces indigo gradient + Inter + default shadcn tokens with a derived identity (5 token commitments), rewrites buzzword copy in plain voice, fixes title/favicon/meta, removes fake social proof by deletion. Layout preserved. Writes docs/DESIGN.md. No unrelated backend churn.",
+      "files": ["fixture: vibe-mart landing page only"]
+    }
+  ]
+}

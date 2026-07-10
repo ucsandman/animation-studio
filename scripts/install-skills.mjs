@@ -1,7 +1,7 @@
 // Installs the bundled skills (skills/*) into ~/.claude/skills so the slash
 // commands (/marketing, /logo-reveal, ...) work from any repo. Rewrites the
 // engine path baked into each SKILL.md to wherever this repo was cloned.
-import {cpSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync} from 'node:fs';
+import {cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, writeFileSync} from 'node:fs';
 import {homedir} from 'node:os';
 import {dirname, join, sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -38,6 +38,10 @@ if (skills.length === 0) {
 for (const name of skills) {
   const from = join(srcDir, name);
   const to = join(destDir, name);
+  if (existsSync(to) && !lstatSync(to).isDirectory()) {
+    console.warn(`skipped /${name}: ${to} exists as a symlink or file; left untouched`);
+    continue;
+  }
   cpSync(from, to, {recursive: true});
   const skillFile = join(to, 'SKILL.md');
   if (existsSync(skillFile)) {
