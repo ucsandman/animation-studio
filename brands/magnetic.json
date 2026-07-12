@@ -1,0 +1,38 @@
+{
+  "id": "magnetic",
+  "name": "Magnetic",
+  "tagline": "A magnetic-timeline video editor for Windows",
+  "url": "github.com/ucsandman/magnetic",
+  "colors": {
+    "bg": "#161617",
+    "surface": "#1d1d1f",
+    "surface2": "#28282b",
+    "line": "#3a3a3c",
+    "ink": "#f5f5f7",
+    "ink2": "#98989d",
+    "ink3": "#6e6e73",
+    "brand": "#0a84ff",
+    "profit": "#ffd60a",
+    "safe": "#4ca47c",
+    "loss": "#ff6961",
+    "info": "#0a6fe0",
+    "rare": "#5e5ce6"
+  },
+  "fonts": {
+    "display": "Inter",
+    "body": "Inter",
+    "mono": "JetBrains Mono"
+  },
+  "effects": {"wash": 0, "glow": 0.12},
+  "grade": {"grain": 0.08, "vignette": 0.15, "bloom": 0, "aberration": 0, "letterbox": 0},
+  "motion": {
+    "tempo": 1,
+    "exuberance": 0.05,
+    "stagger": 0.3,
+    "overshoot": 0,
+    "parallax": 0.15,
+    "settle": 0.1,
+    "textReveal": "maskWipe"
+  },
+  "voice": "Finished Apple pro app: restrained, precise, quiet confidence. The footage is the hero; chrome recedes. Blue #0a84ff means selected/active/focus ONLY and is the single accent - never a decorative wash or glow. Yellow means marks/keyframes only. Green means audio waveforms only. Red means destructive/errors only. No gradients, no badges, no emoji, no hype. Dense, factual, keyboard-first."
+}
