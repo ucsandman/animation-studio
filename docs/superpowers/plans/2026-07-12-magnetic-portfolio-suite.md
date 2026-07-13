@@ -356,8 +356,7 @@ git commit -m "feat(magnetic): product demo props builder + render"
 
 - [ ] **Step 1: Logo reveal**
 
-Stills at act boundaries first, inspect; then:
-`cd studio && npx remotion render LogoReveal ../out/magnetic/logo-reveal.mp4 --props='{"brandId":"magnetic"}'`
+Stills at act boundaries first, inspect. `scripts/render-magnetic-statics.mjs` owns the actual logo-reveal render (CTA sourced from brief.json) — LogoReveal's own `defaultProps` are noban's, so the raw `npx remotion render LogoReveal ... --props='{"brandId":"magnetic"}'` command bakes noban's default copy ("Simulate free at noban.gg") into the output and must not be used as the recipe.
 
 - [ ] **Step 2: Write + run `scripts/render-magnetic-statics.mjs`**
 
