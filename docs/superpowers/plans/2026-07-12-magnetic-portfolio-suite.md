@@ -311,7 +311,9 @@ git add feeders/capture/record-magnetic-demo.mjs
 git commit -m "feat(magnetic): electron demo recording via e2e test bridge"
 ```
 
----### Task 8: ProductDemo render
+---
+
+### Task 8: ProductDemo render
 
 **Files:**
 - Create: `scripts/build-magnetic-demo-props.mjs`
