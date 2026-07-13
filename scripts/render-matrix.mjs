@@ -5,12 +5,13 @@
 // calculateMetadata reads (Root.tsx); we merge them into a temp props file per
 // platform and pass --props.
 //
-// Usage: node scripts/render-matrix.mjs <brand> [--comp LaunchVideo|SocialClip]
-//          [--only <platformId>] [--stills-only] [--webm]
+// Usage: node scripts/render-matrix.mjs <brand> [--comp LaunchVideo|SocialClip|WrapClip]
+//          [--only <platformId>] [--props <path>] [--stills-only] [--webm]
 //   --stills-only   render a single text-bearing still per platform (layout proof,
 //                   no CPU for full video). Otherwise renders full .mp4 per platform.
 //   --only <id>     render just the one platform row matching scripts/platforms.json's
 //                   `id` (e.g. social-1x1) — cheap smoke-test path, combinable with --comp.
+//   --props <path>  override the per-comp base props file (see the --props note below).
 //   --webm          additionally transcode each rendered mp4 to VP9/Opus webm
 //                   (skipped with a log line, never a failure, if the bundled ffmpeg
 //                   lacks libvpx-vp9/libopus — probed once via `remotion ffmpeg -encoders`).
@@ -27,11 +28,25 @@
 // also get an extra <id>-captioned variant with the VO burned into on-screen
 // captions — but only when props/<brand>-audio.json exists (else skipped, one log
 // line). LaunchVideo reads caption text from the merged `audio` manifest; SocialClip
-// from a merged `voLines` array (it has no audio track).
+// from a merged `voLines` array (it has no audio track). WrapClip is different: its
+// captions are already baked into the per-segment props (props/<brand>-wrap-<id>.json's
+// `captions` array is always burned by WrapClip.tsx), so wrap-* platform rows never set
+// {captioned:true} — there is no on/off toggle to layer on top, and this mechanism's
+// LaunchVideo/SocialClip-specific merge (`withCaptions`) doesn't apply to it.
+//
+// --props <path>: override the per-comp base props file entirely. WrapClip has no
+// single canonical base props file (unlike <brand>-launch.json / <brand>-social-*.json)
+// — each segment gets its own props/<brand>-wrap-<segmentId>.json from
+// build-wrap-props.mjs — so this bypasses matrix-props.mjs's resolveBaseProps and reads
+// the given file directly for every matched platform row. When set, outputs nest under
+// out/<brand>/matrix/wrap-<segmentId>/ (segmentId parsed off the props filename) instead
+// of the flat matrix dir, and the segment id is folded into each rendered id — and the
+// run.json manifest key — so re-running the matrix for a different segment of the same
+// brand doesn't clobber the previous segment's manifest rows.
 import {execSync} from 'node:child_process';
 import {existsSync, mkdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync} from 'node:fs';
 import {fileURLToPath} from 'node:url';
-import {dirname, join} from 'node:path';
+import {basename, dirname, join, resolve} from 'node:path';
 import {makeBaseLoader, withFormat} from './lib/matrix-props.mjs';
 
 process.on('unhandledRejection', (reason) => {
@@ -50,9 +65,11 @@ const compIdx = args.indexOf('--comp');
 const compFilter = compIdx >= 0 ? args[compIdx + 1] : null;
 const onlyIdx = args.indexOf('--only');
 const onlyFilter = onlyIdx >= 0 ? args[onlyIdx + 1] : null;
+const propsIdx = args.indexOf('--props');
+const propsOverrideArg = propsIdx >= 0 ? args[propsIdx + 1] : null;
 
 if (!brand) {
-  console.error('usage: node scripts/render-matrix.mjs <brand> [--comp LaunchVideo|SocialClip] [--only <id>] [--stills-only] [--webm]');
+  console.error('usage: node scripts/render-matrix.mjs <brand> [--comp LaunchVideo|SocialClip|WrapClip] [--only <id>] [--props <path>] [--stills-only] [--webm]');
   process.exit(1);
 }
 
@@ -67,7 +84,25 @@ const audioManifest = existsSync(audioPropsPath)
 // A text-bearing frame per composition (headline act) — the layout proof frame.
 const stillFrame = (comp) => (comp === 'LaunchVideo' ? 240 : 40);
 
-const outDir = join(root, 'out', brand, 'matrix');
+// See the --props header comment above: when given, every platform row's base props
+// come from this one file instead of resolveBaseProps, and outputs/ids get namespaced
+// by the segment id parsed off its filename (props/<brand>-wrap-<segmentId>.json).
+let propsOverrideData = null;
+let segmentId = null;
+if (propsOverrideArg) {
+  const propsOverridePath = resolve(root, propsOverrideArg);
+  if (!existsSync(propsOverridePath)) {
+    console.error(`--props file not found: ${propsOverridePath}`);
+    process.exit(1);
+  }
+  propsOverrideData = JSON.parse(readFileSync(propsOverridePath, 'utf8'));
+  const base = basename(propsOverridePath, '.json');
+  const prefix = `${brand}-wrap-`;
+  segmentId = base.startsWith(prefix) ? base.slice(prefix.length) : base;
+}
+
+const matrixRelDir = segmentId ? `matrix/wrap-${segmentId}` : 'matrix';
+const outDir = join(root, 'out', brand, matrixRelDir);
 const propsDir = join(outDir, '.props');
 mkdirSync(propsDir, {recursive: true});
 
@@ -124,7 +159,7 @@ const renderVariant = (id, comp, width, height, props) => {
   const cmd = stillsOnly
     ? `npx remotion still ${comp} "${outFile}" --props="${propsPath}" --frame=${stillFrame(comp)}`
     : `npx remotion render ${comp} "${outFile}" --props="${propsPath}"`;
-  console.log(`matrix: ${id} (${width}x${height}) -> out/${brand}/matrix/${id}.${ext}`);
+  console.log(`matrix: ${id} (${width}x${height}) -> out/${brand}/${matrixRelDir}/${id}.${ext}`);
   execSync(cmd, {cwd: studio, stdio: 'inherit'});
   if (!existsSync(outFile)) {
     console.error(`FAILED: ${outFile} was not produced`);
@@ -136,11 +171,11 @@ const renderVariant = (id, comp, width, height, props) => {
     if (webmFlag && webmSupported) {
       const webmFile = join(outDir, `${id}.webm`);
       const webmBytes = transcodeWebm(outFile, webmFile);
-      console.log(`matrix: ${id} webm -> out/${brand}/matrix/${id}.webm (${webmBytes} bytes)`);
+      console.log(`matrix: ${id} webm -> out/${brand}/${matrixRelDir}/${id}.webm (${webmBytes} bytes)`);
     }
   }
 
-  return {id, path: `out/${brand}/matrix/${id}.${ext}`, width, height, bytes: statSync(outFile).size};
+  return {id, path: `out/${brand}/${matrixRelDir}/${id}.${ext}`, width, height, bytes: statSync(outFile).size};
 };
 
 // Merge caption data into a base props object per composition.
@@ -157,7 +192,7 @@ const rendered = [];
 for (const p of platforms) {
   if (compFilter && p.comp !== compFilter) continue;
   if (onlyFilter && p.id !== onlyFilter) continue;
-  const base = withFormat(loadBase(p.comp), p.width, p.height);
+  const base = withFormat(propsOverrideData ?? loadBase(p.comp), p.width, p.height);
   rendered.push(renderVariant(p.id, p.comp, p.width, p.height, base));
 
   if (p.captioned) {
@@ -181,7 +216,13 @@ const runJson = join(root, 'out', brand, 'marketing', 'run.json');
 if (existsSync(runJson)) {
   const data = JSON.parse(readFileSync(runJson, 'utf8'));
   const byId = new Map((Array.isArray(data.exports) ? data.exports : []).map((e) => [e.id, e]));
-  for (const r of rendered) byId.set(r.id, r);
+  for (const r of rendered) {
+    // Segment-scope the manifest key so re-running the matrix for a different
+    // WrapClip segment doesn't overwrite the previous segment's rows (both would
+    // otherwise share the same platforms.json id, e.g. "wrap-16x9").
+    const key = segmentId ? `${segmentId}-${r.id}` : r.id;
+    byId.set(key, {...r, id: key});
+  }
   data.exports = [...byId.values()];
   const tmp = `${runJson}.tmp`;
   writeFileSync(tmp, JSON.stringify(data, null, 2));
