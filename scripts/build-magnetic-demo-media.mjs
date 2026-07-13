@@ -1,0 +1,367 @@
+#!/usr/bin/env node
+// Builds Magnetic's demo footage media: three silent "b-roll" clips (visually
+// distinct variants of feeders/blender/scenes/background_loop.py, rendered under
+// the magnetic brand) plus one voiceover take (clip-a's picture + a speech track
+// with two deliberate 2-3s dead-air pauses mid-take) that Task 7's recording
+// imports and Rough Cut is expected to detect on camera.
+//
+// Idempotent via scripts/lib/cache.mjs (content-hash per stage, re-checked against
+// what's actually on disk). VO generation tries ElevenLabs (feeders/audio/client.mjs
+// vo); a documented exit 2 (no ELEVENLABS_API_KEY) falls back to Windows SAPI TTS via
+// PowerShell — same technique as C:\projects\final-cut-pro\scripts\make-fixtures.mjs
+// (READ-ONLY reference, not imported).
+//
+// Blender renders run in 60-frame CHUNKS, one fresh Blender process each, with a
+// hard per-chunk timeout. Reason (observed 2026-07-12): a single full-length
+// --animation run rendered 66 frames in ~34s then hung, producing nothing for 9+
+// minutes until killed. Chunking stays under the observed hang point, turns a
+// recurrence into a loud per-chunk failure instead of a silent stall, and gives
+// natural resume (contiguous frames on disk + a render-config marker; a config
+// mismatch deterministically cleans the clip's frame dir). Chunk determinism was
+// verified: frame 1 rendered via --frame vs via a chunked --animation range is
+// pixel-identical (max channel diff 0/255).
+//
+// Usage: node scripts/build-magnetic-demo-media.mjs [--stage <name>]
+//   --stage render-a|render-b|render-c  render that clip's PNG frames (resumable)
+//   --stage encode                      encode all three frame dirs to mp4
+//   --stage vo                          VO take: speech + pauses muxed over clip-a
+//   --stage all                         everything in order (default)
+// Output (staged, gitignored):
+//   out/magnetic/demo-media/{clip-a,clip-b,clip-c,voiceover-take}.mp4
+import {execSync, spawnSync} from 'node:child_process';
+import {existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync} from 'node:fs';
+import {fileURLToPath} from 'node:url';
+import {dirname, join, resolve} from 'node:path';
+import {checkCache, cacheKey, storeCache} from './lib/cache.mjs';
+
+process.on('unhandledRejection', (reason) => {
+  console.error('Unhandled Rejection:', reason);
+  process.exit(1);
+});
+
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
+const STUDIO = join(ROOT, 'studio');
+const BRAND = 'magnetic';
+const FOOTAGE_DIR = join(ROOT, 'assets', 'magnetic', 'footage');
+const VO_DIR = join(ROOT, 'assets', 'magnetic', 'vo');
+const OUT_DIR = join(ROOT, 'out', 'magnetic', 'demo-media');
+const FPS = 30;
+const FRAME_COUNT = 240; // 8s @ 30fps: plenty for filmstrip/skim footage, and the
+// picture loops seamlessly (background_loop's whole-cycle phase drift), so longer
+// timeline durations come free via looping rather than more render time.
+const CHUNK_FRAMES = 60; // frames per Blender process; under the observed frame-67 hang
+const CHUNK_TIMEOUT_MS = 240_000; // ~35s expected per chunk; a hang fails loudly here
+
+// Three variants of the one scene, distinguished by the Wave texture's own knobs
+// (background_loop.py's --scale/--distortion/--detail/--phase-start) so the
+// filmstrip browser shows visibly distinct thumbnails without touching color.
+const VARIANTS = [
+  {id: 'a', scale: 1.2, distortion: 2.4, detail: 2.0, phaseStart: 0.0}, // original tuning
+  {id: 'b', scale: 2.6, distortion: 4.0, detail: 3.5, phaseStart: 0.4}, // tight, turbulent
+  {id: 'c', scale: 0.6, distortion: 1.0, detail: 1.0, phaseStart: 0.75}, // broad, calm
+];
+
+// Written for the ear; two scripted dead-air gaps sit between the three lines.
+// Kept short deliberately - clip-a's picture loops under the take (see muxTake)
+// so total length isn't bounded by the 10-15s background-clip spec, but a short
+// script keeps the take a natural single loop in the common case.
+const VO_LINES = [
+  {id: 'seg1', text: "Here's how the timeline engine works."},
+  {id: 'seg2', text: "Every clip snaps and merges like it's magnetic."},
+  {id: 'seg3', text: "That's the whole idea."},
+];
+// seg1|pause|seg2|pause|seg3. silencedetect measures the scripted pause PLUS the
+// TTS lines' own edge padding (~0.3-0.5s observed), so these are set slightly
+// short to keep the DETECTED silences inside the 2-3s ask.
+const PAUSES_MS = [2500, 2300];
+
+mkdirSync(FOOTAGE_DIR, {recursive: true});
+mkdirSync(VO_DIR, {recursive: true});
+mkdirSync(OUT_DIR, {recursive: true});
+
+const run = (cmd, cwd = ROOT, timeout) => execSync(cmd, {cwd, stdio: 'inherit', ...(timeout ? {timeout} : {})});
+
+const runCapture = (cmd, cwd = ROOT) => execSync(cmd, {cwd, encoding: 'utf8'});
+
+const variantConfig = (variant) => ({
+  brand: BRAND,
+  frameCount: FRAME_COUNT,
+  fps: FPS,
+  ...variant,
+});
+
+// Highest N such that frames 1..N are all present on disk (contiguous prefix).
+function contiguousFrames(framesDir) {
+  const present = new Set(
+    readdirSync(framesDir)
+      .map((f) => /^frame_(\d{4})\.png$/.exec(f)?.[1])
+      .filter(Boolean)
+      .map(Number),
+  );
+  let n = 0;
+  while (present.has(n + 1)) n += 1;
+  return n;
+}
+
+// Renders one variant's PNG frames in CHUNK_FRAMES-sized Blender runs. Resumable:
+// a render-config.json marker records the exact knob set; on mismatch (or absence)
+// the frame dir is cleaned — stale frames from a different config are never mixed
+// in. On match, rendering resumes at the contiguous prefix, re-rendering the last
+// existing frame in case the previous run died mid-write.
+function renderStage(variant) {
+  const framesDir = join(FOOTAGE_DIR, variant.id);
+  const markerPath = join(framesDir, 'render-config.json');
+  const config = variantConfig(variant);
+  mkdirSync(framesDir, {recursive: true});
+
+  const markerOk =
+    existsSync(markerPath) &&
+    JSON.stringify(JSON.parse(readFileSync(markerPath, 'utf8'))) === JSON.stringify(config);
+  if (!markerOk) {
+    const stale = readdirSync(framesDir).filter((f) => /^frame_\d+\.png$/.test(f));
+    if (stale.length > 0) {
+      console.log(`render-${variant.id}: config changed/missing marker — cleaning ${stale.length} stale frame(s)`);
+      rmSync(framesDir, {recursive: true, force: true});
+      mkdirSync(framesDir, {recursive: true});
+    }
+    writeFileSync(markerPath, JSON.stringify(config, null, 2) + '\n');
+  }
+
+  const done = contiguousFrames(framesDir);
+  if (done >= FRAME_COUNT) {
+    console.log(`render-${variant.id}: all ${FRAME_COUNT} frames present, skipping`);
+    return framesDir;
+  }
+
+  // Resume at the last contiguous frame (re-render it: a killed run may have
+  // left it partially written).
+  let next = Math.max(1, done);
+  console.log(`render-${variant.id}: rendering frames ${next}..${FRAME_COUNT} in chunks of ${CHUNK_FRAMES} (scale=${variant.scale} distortion=${variant.distortion} detail=${variant.detail} phase-start=${variant.phaseStart})`);
+  while (next <= FRAME_COUNT) {
+    const end = Math.min(next + CHUNK_FRAMES - 1, FRAME_COUNT);
+    console.log(`render-${variant.id}: chunk ${next}-${end}`);
+    run(
+      `python feeders/blender/render.py feeders/blender/scenes/background_loop.py --out "${framesDir}" --animation --brand ${BRAND} --frame-count ${FRAME_COUNT} --scale ${variant.scale} --distortion ${variant.distortion} --detail ${variant.detail} --phase-start ${variant.phaseStart} --start-frame ${next} --end-frame ${end}`,
+      ROOT,
+      CHUNK_TIMEOUT_MS,
+    );
+    const have = contiguousFrames(framesDir);
+    if (have < end) {
+      throw new Error(`render-${variant.id}: chunk ${next}-${end} finished but only frames 1..${have} are contiguous on disk`);
+    }
+    next = end + 1;
+  }
+  console.log(`render-${variant.id}: ${FRAME_COUNT} frames complete in ${framesDir}`);
+  return framesDir;
+}
+
+// Encodes one variant's completed frame dir to H.264 yuv420p faststart mp4.
+// Cached on the full knob set; refuses to encode an incomplete sequence.
+function encodeClip(variant) {
+  const outMp4 = join(OUT_DIR, `clip-${variant.id}.mp4`);
+  const framesDir = join(FOOTAGE_DIR, variant.id);
+  const key = cacheKey({stage: `clip-${variant.id}`, ...variantConfig(variant)});
+  const {hit} = checkCache(BRAND, `clip-${variant.id}`, key, [outMp4]);
+  if (hit) {
+    console.log(`encode clip-${variant.id}: cache hit, skipping (${outMp4})`);
+    return outMp4;
+  }
+
+  const done = existsSync(framesDir) ? contiguousFrames(framesDir) : 0;
+  if (done < FRAME_COUNT) {
+    throw new Error(`encode clip-${variant.id}: frames incomplete (${done}/${FRAME_COUNT}) — run --stage render-${variant.id} first`);
+  }
+
+  console.log(`encode clip-${variant.id}: -> ${outMp4}`);
+  run(
+    `npx remotion ffmpeg -y -framerate ${FPS} -i "${join(framesDir, 'frame_%04d.png')}" -c:v libx264 -pix_fmt yuv420p -movflags +faststart "${outMp4}"`,
+    STUDIO,
+  );
+  if (!existsSync(outMp4)) throw new Error(`encode clip-${variant.id}: did not produce ${outMp4}`);
+
+  storeCache(BRAND, `clip-${variant.id}`, key, [outMp4]);
+  return outMp4;
+}
+
+// Generates the 3 speech segments into VO_DIR (id.mp3 via ElevenLabs, or id.wav via
+// the SAPI fallback below). Tries ElevenLabs first; a documented exit 2 (no key)
+// falls back to Windows SAPI TTS per-line via PowerShell. Returns an array of
+// resolved file paths, one per VO_LINES entry, in order.
+function generateVoSegments() {
+  const missing = VO_LINES.filter((l) => !existsSync(join(VO_DIR, `${l.id}.mp3`)) && !existsSync(join(VO_DIR, `${l.id}.wav`)));
+  if (missing.length === 0) {
+    console.log('vo: all segments already staged, skipping generation');
+    return VO_LINES.map((l) => resolveSegmentPath(l.id));
+  }
+
+  const scriptPath = join(VO_DIR, 'vo-script.json');
+  writeFileSync(scriptPath, JSON.stringify({lines: missing}));
+  console.log(`vo: requesting ${missing.length} segment(s) from ElevenLabs...`);
+  const res = spawnSync('node', ['feeders/audio/client.mjs', 'vo', '--script', scriptPath, '--out', VO_DIR], {cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe']});
+  process.stdout.write(res.stdout ?? '');
+  process.stderr.write(res.stderr ?? '');
+
+  if (res.status === 2) {
+    console.log('vo: ELEVENLABS_API_KEY absent (documented fallback) -> Windows SAPI TTS per segment.');
+    for (const l of missing) sapiSpeak(l.text, join(VO_DIR, `${l.id}.wav`));
+  } else if (res.status !== 0) {
+    throw new Error(`vo: feeders/audio/client.mjs exited ${res.status}`);
+  }
+
+  return VO_LINES.map((l) => resolveSegmentPath(l.id));
+}
+
+function resolveSegmentPath(id) {
+  const mp3 = join(VO_DIR, `${id}.mp3`);
+  const wav = join(VO_DIR, `${id}.wav`);
+  if (existsSync(mp3)) return mp3;
+  if (existsSync(wav)) return wav;
+  throw new Error(`vo: no audio staged for segment ${id}`);
+}
+
+// Windows SAPI TTS via PowerShell (same technique as final-cut-pro's
+// scripts/make-fixtures.mjs, read-only reference — not imported, this repo has no
+// Node dependency on that file).
+function sapiSpeak(text, outWavPath) {
+  const psCommand = [
+    'Add-Type -AssemblyName System.Speech;',
+    '$s = New-Object System.Speech.Synthesis.SpeechSynthesizer;',
+    `$s.SetOutputToWaveFile('${outWavPath.replace(/'/g, "''")}');`,
+    `$s.Speak('${text.replace(/'/g, "''")}');`,
+    '$s.Dispose()',
+  ].join(' ');
+  const res = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', psCommand], {stdio: 'inherit'});
+  if (res.status !== 0) throw new Error(`SAPI TTS (powershell.exe) exited ${res.status}`);
+  if (!existsSync(outWavPath)) throw new Error(`SAPI TTS did not produce ${outWavPath}`);
+  console.log(`vo: SAPI wrote ${outWavPath}`);
+}
+
+// Normalizes one segment to 44.1kHz mono PCM WAV so it concatenates cleanly with
+// the generated silence beds regardless of source codec (ElevenLabs mp3 vs SAPI wav).
+function normalizeToWav(srcPath, destPath) {
+  run(`npx remotion ffmpeg -y -i "${srcPath}" -ar 44100 -ac 1 "${destPath}"`, STUDIO);
+  if (!existsSync(destPath)) throw new Error(`normalize did not produce ${destPath}`);
+}
+
+function generateSilence(ms, destPath) {
+  run(`npx remotion ffmpeg -y -f lavfi -i anullsrc=r=44100:cl=mono -t ${(ms / 1000).toFixed(3)} "${destPath}"`, STUDIO);
+  if (!existsSync(destPath)) throw new Error(`silence generation did not produce ${destPath}`);
+}
+
+// Builds the take's audio: seg1, pause, seg2, pause, seg3, concatenated via ffmpeg's
+// concat demuxer (all parts normalized to the same PCM WAV spec first).
+function buildTakeAudio(segmentPaths) {
+  const takeWav = join(VO_DIR, 'take.wav');
+  const key = cacheKey({stage: 'take-audio', lines: VO_LINES, pausesMs: PAUSES_MS});
+  const {hit} = checkCache(BRAND, 'take-audio', key, [takeWav]);
+  if (hit) {
+    console.log(`take-audio: cache hit, skipping (${takeWav})`);
+    return takeWav;
+  }
+
+  const normSegs = segmentPaths.map((p, i) => {
+    const dest = join(VO_DIR, `norm-seg${i + 1}.wav`);
+    normalizeToWav(p, dest);
+    return dest;
+  });
+  const pausePaths = PAUSES_MS.map((ms, i) => {
+    const dest = join(VO_DIR, `pause${i + 1}.wav`);
+    generateSilence(ms, dest);
+    return dest;
+  });
+
+  const parts = [normSegs[0], pausePaths[0], normSegs[1], pausePaths[1], normSegs[2]];
+  const listPath = join(VO_DIR, 'concat-list.txt');
+  writeFileSync(listPath, parts.map((p) => `file '${resolve(p).replace(/\\/g, '/')}'`).join('\n') + '\n');
+
+  console.log('take-audio: concatenating seg1 + pause + seg2 + pause + seg3...');
+  run(`npx remotion ffmpeg -y -f concat -safe 0 -i "${listPath}" -c copy "${takeWav}"`, STUDIO);
+  if (!existsSync(takeWav)) throw new Error(`concat did not produce ${takeWav}`);
+
+  storeCache(BRAND, 'take-audio', key, [takeWav]);
+  return takeWav;
+}
+
+// Muxes clip-a's picture under the take audio. The VO track's length depends on
+// TTS pacing, so -stream_loop -1 loops clip-a's (seamless) picture as needed and
+// -shortest ends the take at the AUDIO length. Video is re-encoded rather than
+// stream-copied: with -c:v copy, -shortest only cuts at copied-packet boundaries
+// and left a ~3s soundless video tail — a third silent stretch Rough Cut would
+// detect on camera alongside the two scripted pauses.
+function muxVoiceoverTake(clipAPath, takeAudioPath) {
+  const outMp4 = join(OUT_DIR, 'voiceover-take.mp4');
+  console.log(`voiceover-take: muxing ${clipAPath} (looped) + ${takeAudioPath} -> ${outMp4}`);
+  run(
+    `npx remotion ffmpeg -y -stream_loop -1 -i "${clipAPath}" -i "${takeAudioPath}" -c:v libx264 -pix_fmt yuv420p -movflags +faststart -c:a aac -shortest "${outMp4}"`,
+    STUDIO,
+  );
+  if (!existsSync(outMp4)) throw new Error(`mux did not produce ${outMp4}`);
+  return outMp4;
+}
+
+// Sanity-verifies the take reports exactly two silences >=1.5s (the two scripted
+// pauses) via ffmpeg's silencedetect filter, per the PLAYBOOK verification idiom.
+// Logs the raw silencedetect lines; throws if the count is wrong (catches a broken
+// concat or an over-trimmed mux before it reaches Task 7).
+function verifySilences(mp4Path) {
+  // -vn + explicit pcm_s16le: Remotion's trimmed ffmpeg lacks wrapped_avframe
+  // (the null muxer's default video encoder), so a bare `-f null -` errors with
+  // "Encoder not found". Audio-only with an encoder it does ship works.
+  const out = runCapture(
+    `npx remotion ffmpeg -i "${mp4Path}" -vn -af silencedetect=noise=-35dB:d=1.5 -c:a pcm_s16le -f null - 2>&1`,
+    STUDIO,
+  );
+  const starts = out.match(/silence_start: [\d.]+/g) ?? [];
+  console.log('voiceover-take: silencedetect output --');
+  for (const line of out.split('\n')) {
+    if (line.includes('silence_start') || line.includes('silence_end')) console.log(`  ${line.trim()}`);
+  }
+  if (starts.length !== 2) {
+    throw new Error(`voiceover-take: expected 2 detected silences (the scripted pauses), found ${starts.length}`);
+  }
+  console.log(`voiceover-take: verified ${starts.length}/2 scripted dead-air pauses detected.`);
+}
+
+function voStage() {
+  const clipA = join(OUT_DIR, 'clip-a.mp4');
+  if (!existsSync(clipA)) {
+    throw new Error('vo: clip-a.mp4 missing — run --stage encode first');
+  }
+  const segmentPaths = generateVoSegments();
+  const takeAudioPath = buildTakeAudio(segmentPaths);
+  const voiceoverPath = muxVoiceoverTake(clipA, takeAudioPath);
+  verifySilences(voiceoverPath);
+}
+
+const STAGES = {
+  'render-a': () => renderStage(VARIANTS[0]),
+  'render-b': () => renderStage(VARIANTS[1]),
+  'render-c': () => renderStage(VARIANTS[2]),
+  encode: () => VARIANTS.forEach(encodeClip),
+  vo: voStage,
+};
+
+async function main() {
+  const stageIdx = process.argv.indexOf('--stage');
+  const stage = stageIdx >= 0 ? process.argv[stageIdx + 1] : 'all';
+  if (stage !== 'all' && !STAGES[stage]) {
+    throw new Error(`unknown --stage "${stage}" (expected ${Object.keys(STAGES).join('|')}|all)`);
+  }
+
+  console.log(`== Magnetic demo media builder (stage: ${stage}) ==`);
+  const toRun = stage === 'all' ? Object.keys(STAGES) : [stage];
+  for (const name of toRun) STAGES[name]();
+
+  if (stage === 'all' || stage === 'vo') {
+    console.log('\n== Inventory ==');
+    for (const f of ['clip-a.mp4', 'clip-b.mp4', 'clip-c.mp4', 'voiceover-take.mp4']) {
+      console.log(`  ${join(OUT_DIR, f)}`);
+    }
+  }
+  console.log(`build-magnetic-demo-media OK (stage: ${stage})`);
+}
+
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

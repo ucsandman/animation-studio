@@ -1,4 +1,9 @@
-"""Seamless noban background loop: violet wave drift on near-black, 240 frames."""
+"""Seamless brand-driven background loop: accent wave drift on near-black.
+
+Defaults reproduce the original noban tuning (240 frames, violet accent).
+--brand selects any brands/<id>.json (uses colors.bg + colors.brand);
+--frame-count/--scale/--distortion/--detail/--phase-start vary the Wave
+texture so multiple renders of this one scene look visibly distinct."""
 
 import argparse
 import json
@@ -8,13 +13,13 @@ from pathlib import Path
 import bpy
 
 ROOT = Path(__file__).resolve().parents[3]
-BRAND = json.loads((ROOT / "brands" / "noban.json").read_text())
 
 FPS = 30
 FRAMES = 240
 DRIFT_PERIODS = 3  # whole wave periods advanced over the loop => seamless;
-# odd, so the frame-120 midpoint sits at a half-period offset (max contrast
-# from frame 1) instead of coincidentally landing back near phase 0
+# odd, so the loop's midpoint sits at a half-period offset (max contrast from
+# frame 1) instead of coincidentally landing back near phase 0 - true for any
+# --frame-count since it's expressed as a fraction of the loop length.
 
 
 def srgb_to_linear(c: float) -> float:
@@ -34,10 +39,54 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--out", required=True)
     parser.add_argument("--frame", type=int)
     parser.add_argument("--animation", action="store_true")
+    parser.add_argument(
+        "--brand", default="noban", help="brand id under brands/<id>.json"
+    )
+    parser.add_argument(
+        "--frame-count",
+        type=int,
+        default=FRAMES,
+        dest="frame_count",
+        help="total loop length in frames (default 240 = 8s @ 30fps)",
+    )
+    parser.add_argument("--scale", type=float, default=1.2, help="Wave texture Scale")
+    parser.add_argument(
+        "--distortion", type=float, default=2.4, help="Wave texture Distortion"
+    )
+    parser.add_argument("--detail", type=float, default=2.0, help="Wave texture Detail")
+    parser.add_argument(
+        "--phase-start",
+        type=float,
+        default=0.0,
+        dest="phase_start",
+        help="starting Phase Offset as a fraction of tau (0-1); shifts the "
+        "pattern's frame-1 appearance without breaking the seamless loop",
+    )
+    # Chunked --animation renders: restrict the rendered range without touching
+    # the loop math (Phase Offset keyframes stay at frame 1 and frame_count+1,
+    # so frame K's pixels are identical whether rendered in one run or in
+    # chunks). Lets callers run many short Blender processes instead of one
+    # long one — a full-length background render was observed to hang mid-
+    # sequence (frame 67/360) on Blender 5.1.2 + EEVEE.
+    parser.add_argument(
+        "--start-frame",
+        type=int,
+        default=1,
+        dest="start_frame",
+        help="first frame of the rendered range (animation mode)",
+    )
+    parser.add_argument(
+        "--end-frame",
+        type=int,
+        default=None,
+        dest="end_frame",
+        help="last frame of the rendered range (animation mode); default frame-count",
+    )
     return parser.parse_args(argv)
 
 
-def build_scene() -> None:
+def build_scene(args: argparse.Namespace) -> None:
+    brand = json.loads((ROOT / "brands" / f"{args.brand}.json").read_text())
     scene = bpy.context.scene
     # NOTE (Task 2 finding): scene.collection.objects only lists objects linked
     # directly to the master collection; the factory-startup Cube/Light/Camera
@@ -52,13 +101,13 @@ def build_scene() -> None:
     scene.render.resolution_x = 1920  # noqa: vulture
     scene.render.resolution_y = 1080  # noqa: vulture
     scene.render.fps = FPS  # noqa: vulture
-    scene.frame_start = 1  # noqa: vulture
-    scene.frame_end = FRAMES  # noqa: vulture
+    scene.frame_start = args.start_frame  # noqa: vulture
+    scene.frame_end = min(args.end_frame or args.frame_count, args.frame_count)  # noqa: vulture
     scene.view_settings.view_transform = "Standard"  # noqa: vulture
     scene.render.image_settings.file_format = "PNG"  # noqa: vulture
     scene.render.image_settings.color_mode = "RGB"  # noqa: vulture
 
-    # emissive plane fills the camera; shader mixes bg -> violet by a wave texture
+    # emissive plane fills the camera; shader mixes bg -> accent by a wave texture
     bpy.ops.mesh.primitive_plane_add(size=12, location=(0, 0, 0))
     plane = bpy.context.active_object
 
@@ -77,22 +126,22 @@ def build_scene() -> None:
 
     wave.wave_type = "BANDS"  # noqa: vulture
     wave.bands_direction = "DIAGONAL"  # noqa: vulture
-    wave.inputs["Scale"].default_value = 1.2  # noqa: vulture
-    wave.inputs["Distortion"].default_value = 2.4  # noqa: vulture
-    wave.inputs["Detail"].default_value = 2.0  # noqa: vulture
+    wave.inputs["Scale"].default_value = args.scale  # noqa: vulture
+    wave.inputs["Distortion"].default_value = args.distortion  # noqa: vulture
+    wave.inputs["Detail"].default_value = args.detail  # noqa: vulture
 
-    # bg -> faint violet ramp; violet stays subtle (backdrop, not hero)
+    # bg -> faint accent ramp; accent stays subtle (backdrop, not hero)
     ramp.color_ramp.elements[0].position = 0.35  # noqa: vulture
-    ramp.color_ramp.elements[0].color = hex_rgba(BRAND["colors"]["bg"])  # noqa: vulture
+    ramp.color_ramp.elements[0].color = hex_rgba(brand["colors"]["bg"])  # noqa: vulture
     ramp.color_ramp.elements[1].position = 1.0  # noqa: vulture
     # NOTE: 0.22 (as drafted) looked bright/saturated on render, not subtle -
     # sRGB gamma means a 22%-linear-scaled color still displays at ~50%
     # perceived brightness. 0.08 was tuned by rendering and inspecting frame 1.
-    violet = hex_rgba(BRAND["colors"]["brand"])
+    accent = hex_rgba(brand["colors"]["brand"])
     ramp.color_ramp.elements[1].color = (  # noqa: vulture
-        violet[0] * 0.08,
-        violet[1] * 0.08,
-        violet[2] * 0.08,
+        accent[0] * 0.08,
+        accent[1] * 0.08,
+        accent[2] * 0.08,
         1.0,
     )
 
@@ -119,10 +168,13 @@ def build_scene() -> None:
     # advancing it by DRIFT_PERIODS full 2*pi cycles reproduces frame 1's
     # value exactly at frame 241 (diff <= 1/255, i.e. PNG encoding noise only).
     tau = 2 * 3.141592653589793
-    wave.inputs["Phase Offset"].default_value = 0.0  # noqa: vulture
+    phase_start = args.phase_start * tau
+    wave.inputs["Phase Offset"].default_value = phase_start  # noqa: vulture
     wave.inputs["Phase Offset"].keyframe_insert("default_value", frame=1)
-    wave.inputs["Phase Offset"].default_value = DRIFT_PERIODS * tau  # noqa: vulture
-    wave.inputs["Phase Offset"].keyframe_insert("default_value", frame=FRAMES + 1)
+    wave.inputs["Phase Offset"].default_value = phase_start + DRIFT_PERIODS * tau  # noqa: vulture
+    wave.inputs["Phase Offset"].keyframe_insert(
+        "default_value", frame=args.frame_count + 1
+    )
     # Blender 5.1.2 uses layered actions: Action.fcurves no longer exists
     # (AttributeError). Fcurves live under action.layers[].strips[].channelbags[].
     action = mat.node_tree.animation_data.action
@@ -143,7 +195,7 @@ def build_scene() -> None:
 
 def main() -> None:
     args = parse_args()
-    build_scene()
+    build_scene(args)
     scene = bpy.context.scene
     if args.animation:
         scene.render.filepath = f"{args.out}/frame_"  # noqa: vulture

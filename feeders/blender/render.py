@@ -1,7 +1,10 @@
 """Headless Blender render wrapper: runs a scene script and verifies output.
 
 Usage:
-    python feeders/blender/render.py <scene.py> --out <dir> [--frame N | --animation]
+    python feeders/blender/render.py <scene.py> --out <dir> [--frame N | --animation] [scene-specific flags...]
+
+Any flag not recognized by this wrapper (e.g. a scene's --brand/--seed/--palette
+knobs) is forwarded verbatim to the scene script after the `--` separator.
 """
 
 import argparse
@@ -34,7 +37,12 @@ def find_blender(env: dict) -> str | None:
 
 
 def build_cmd(
-    blender: str, scene: str, out: str, frame: int | None, animation: bool
+    blender: str,
+    scene: str,
+    out: str,
+    frame: int | None,
+    animation: bool,
+    extra: list[str] | None = None,
 ) -> list[str]:
     cmd = [
         blender,
@@ -50,6 +58,8 @@ def build_cmd(
         cmd.append("--animation")
     else:
         cmd += ["--frame", str(frame)]
+    if extra:
+        cmd += extra
     return cmd
 
 
@@ -64,7 +74,7 @@ def main() -> int:
     group.add_argument(
         "--animation", action="store_true", help="render the scene's full range"
     )
-    args = parser.parse_args()
+    args, extra = parser.parse_known_args()
 
     scene = Path(args.scene).resolve()
     if not scene.is_file():
@@ -82,7 +92,9 @@ def main() -> int:
     out_dir = Path(args.out).resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    cmd = build_cmd(blender, str(scene), str(out_dir), args.frame, args.animation)
+    cmd = build_cmd(
+        blender, str(scene), str(out_dir), args.frame, args.animation, extra
+    )
     print("render:", " ".join(cmd))
     proc = subprocess.run(cmd)
     if proc.returncode != 0:

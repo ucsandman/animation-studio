@@ -68,6 +68,34 @@ class TestHelpers(unittest.TestCase):
             ],
         )
 
+    def test_build_cmd_forwards_extra_scene_flags(self):
+        cmd = build_cmd(
+            "blender.exe",
+            "scenes/x.py",
+            "outdir",
+            frame=None,
+            animation=True,
+            extra=["--brand", "magnetic", "--scale", "2.6"],
+        )
+        self.assertEqual(
+            cmd,
+            [
+                "blender.exe",
+                "--background",
+                "--factory-startup",
+                "--python",
+                "scenes/x.py",
+                "--",
+                "--out",
+                "outdir",
+                "--animation",
+                "--brand",
+                "magnetic",
+                "--scale",
+                "2.6",
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
