@@ -20,12 +20,15 @@
  * plays OffthreadVideo aligned to telemetry time). Override with MAGNETIC_TRIM_MS.
  *
  * TELEMETRY CONTRACT (telemetry.json, t in ms relative to rec.start == video t=0):
+ * matches the repo-standard shape in studio/src/lib/telemetry.ts (see also the
+ * reference emitter feeders/capture/recorder.mjs) — ONE flat, chronologically
+ * ordered events array of discriminated-union events:
  *   { viewport:{width,height}, durationMs,
- *     steps:  [{t, label}],
- *     clicks: [{t, x, y}],                       // cursor/ripple, viewport==video px
- *     focus:  [{t, rect:{x, y, w, h}}] }         // x,y = CENTER of region, w,h size
- * Task 8's build-magnetic-demo-props.mjs flattens this into ProductDemo's event
- * schema (studio/src/lib/telemetry.ts: click/step/focus with x,y=center + w,h).
+ *     events: [
+ *       {type:'step',  t, label},
+ *       {type:'click', t, x, y},                  // cursor/ripple, viewport==video px
+ *       {type:'focus', t, x, y, w, h},             // x,y = CENTER of region, w,h size
+ *     ] }
  *
  * Focus rects are MEASURED content regions (DOM boundingBox for the browser panel /
  * export dialog; timeline geometry flicks->x for on-canvas spine regions), never
@@ -37,7 +40,7 @@
  */
 import {_electron as electron} from '@playwright/test';
 import {execFileSync} from 'node:child_process';
-import {copyFileSync, mkdirSync, mkdtempSync, writeFileSync} from 'node:fs';
+import {copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {dirname, join, resolve} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -62,11 +65,11 @@ const FPS_FLICKS = 705_600_000;
 const SPINE_CENTER_Y = 90;
 
 // ---------------- tiny telemetry recorder ----------------
+// Emits the repo-standard flat shape (studio/src/lib/telemetry.ts): one
+// chronologically ordered `events` array of {type, t, ...} discriminated unions.
 class Rec {
   #t0 = null;
-  steps = [];
-  clicks = [];
-  focus = [];
+  events = [];
   start() {
     this.#t0 = performance.now();
   }
@@ -75,10 +78,10 @@ class Rec {
     return Math.round(performance.now() - this.#t0);
   }
   step(label) {
-    this.steps.push({t: this.#now(), label});
+    this.events.push({type: 'step', t: this.#now(), label});
   }
   click(x, y) {
-    this.clicks.push({t: this.#now(), x: Math.round(x), y: Math.round(y)});
+    this.events.push({type: 'click', t: this.#now(), x: Math.round(x), y: Math.round(y)});
   }
   focusRect(x, y, w, h) {
     // clamp the region to the viewport so the camera never frames outside the app
@@ -86,10 +89,10 @@ class Rec {
     const ch = Math.min(VP.height, Math.round(h));
     const cx = Math.min(Math.max(Math.round(x), cw / 2), VP.width - cw / 2);
     const cy = Math.min(Math.max(Math.round(y), ch / 2), VP.height - ch / 2);
-    this.focus.push({t: this.#now(), rect: {x: Math.round(cx), y: Math.round(cy), w: cw, h: ch}});
+    this.events.push({type: 'focus', t: this.#now(), x: Math.round(cx), y: Math.round(cy), w: cw, h: ch});
   }
   finish() {
-    return {viewport: VP, durationMs: this.#now(), steps: this.steps, clicks: this.clicks, focus: this.focus};
+    return {viewport: VP, durationMs: this.#now(), events: this.events};
   }
 }
 
@@ -104,10 +107,14 @@ async function main() {
 
   const app = await electron.launch({
     executablePath: ELECTRON_BIN,
-    args: [MAIN],
+    // force-device-scale-factor=1: coordinates throughout this script assume CSS px == video px.
+    args: [MAIN, '--force-device-scale-factor=1'],
     env: {...process.env, MAGNETIC_TEST: '1', MAGNETIC_LIBRARY_PATH: libraryPath},
     recordVideo: {dir: videoDir, size: VP},
   });
+
+  let telemetry, video, leadInMs;
+  try {
   const page = await app.firstWindow();
   const videoT0Wall = Date.now(); // recordVideo began ~here (window creation)
 
@@ -207,10 +214,17 @@ async function main() {
 
   // ======================= BEAT 2: E append three clips, L plays =======================
   rec.step('Press E — clips snap onto the magnetic timeline, end to end.');
+  let spineCount = (await state()).sequence.spine.length;
   for (const f of ['clip-a.mp4', 'clip-b.mp4', 'clip-c.mp4']) {
     await selectAssetCell(f);
     await page.keyboard.press('e');
-    await sleep(500);
+    spineCount += 1;
+    // append is a mutation: assert the spine actually grew instead of blind-sleeping past a no-op click
+    await page.waitForFunction(
+      (n) => window.__magneticState().sequence.spine.length >= n,
+      spineCount,
+      {timeout: 5_000},
+    );
   }
   await page.keyboard.press('Shift+z'); // zoom to fit so the whole spine is visible
   await sleep(400);
@@ -241,7 +255,13 @@ async function main() {
     await page.keyboard.press('b'); // blade tool
     await sleep(250);
     await clickAt(cutX, yMid); // slice clip B -> [A, B1, B2, C]
-    await sleep(400);
+    // blade is a mutation: assert the spine actually split instead of blind-sleeping past a
+    // no-op click (this is the exact failure mode from Take 2 — a click that missed the hit-band)
+    await page.waitForFunction(
+      (n) => window.__magneticState().sequence.spine.length === n,
+      durs.length + 1,
+      {timeout: 5_000},
+    );
     await page.keyboard.press('a'); // back to select tool
     // select the right half (B2): just right of the cut
     st = await state();
@@ -250,8 +270,14 @@ async function main() {
     await clickAt(b2X, yMid);
     await sleep(300);
     rec.focusRect(cutX, yMid, 760, 360); // the closing-gap join
+    const countBeforeDelete = (await state()).sequence.spine.length;
     await page.keyboard.press('Delete'); // ripple delete -> downstream slides left, gap shut
-    await sleep(1200);
+    // delete is a mutation: assert the spine actually shrank (ripple-closed the gap)
+    await page.waitForFunction(
+      (before) => window.__magneticState().sequence.spine.length < before,
+      countBeforeDelete,
+      {timeout: 5_000},
+    );
   }
 
   // ======================= BEAT 4: Ctrl+B blade a clip, Ctrl+T cross dissolve on that cut =======================
@@ -276,7 +302,13 @@ async function main() {
     await page.keyboard.press('Control+b'); // blade at playhead: both-handle internal cut
     await sleep(300);
     await page.keyboard.press('Control+t'); // 1 s cross dissolve on that cut
-    await sleep(900);
+    // dissolve is a mutation: assert transitions actually landed instead of blind-sleeping past a
+    // no-op (this is the exact Take 3 failure — a dissolve rejected for missing media handles)
+    await page.waitForFunction(
+      () => (window.__magneticState().sequence.transitions ?? []).length > 0,
+      undefined,
+      {timeout: 5_000},
+    );
     box = await canvasBox();
     st = await state();
     v = await view();
@@ -335,11 +367,14 @@ async function main() {
     await sleep(500);
   }
 
-  const telemetry = rec.finish();
-  const leadInMs = process.env.MAGNETIC_TRIM_MS ? Number(process.env.MAGNETIC_TRIM_MS) : recStartWall - videoT0Wall;
+  telemetry = rec.finish();
+  leadInMs = process.env.MAGNETIC_TRIM_MS ? Number(process.env.MAGNETIC_TRIM_MS) : recStartWall - videoT0Wall;
+  video = page.video();
+  } finally {
+    await app.close(); // flushes the webm; always runs so a failed beat never leaks the Electron process
+    rmSync(tempRoot, {recursive: true, force: true});
+  }
 
-  const video = page.video();
-  await app.close(); // flushes the webm
   const rawWebm = await video.path();
   console.log(`raw webm: ${rawWebm}  (lead-in trim ${leadInMs} ms, duration ${telemetry.durationMs} ms)`);
 
@@ -363,9 +398,10 @@ async function main() {
     copyFileSync(trimmedWebm, join(destDir, 'demo.webm'));
     writeFileSync(join(destDir, 'telemetry.json'), telemetryJson);
   }
+  const countByType = (type) => telemetry.events.filter((e) => e.type === type).length;
   console.log(
     `staged demo.webm + telemetry.json -> studio/public/magnetic/ and assets/magnetic/demo/  ` +
-      `(${telemetry.steps.length} steps, ${telemetry.clicks.length} clicks, ${telemetry.focus.length} focus)`,
+      `(${countByType('step')} steps, ${countByType('click')} clicks, ${countByType('focus')} focus)`,
   );
 }
 
