@@ -48,11 +48,11 @@ export function validateManifest(json) {
   return json;
 }
 
-function timeToSeconds(timeStr) {
-  // Format: HH:MM:SS,mmm
-  const parts = timeStr.match(/(\d+):(\d+):(\d+),(\d+)/);
-  if (!parts) throw new Error(`invalid time format: ${timeStr}`);
-  const [, hours, minutes, seconds, millis] = parts;
+// Full timecode line: HH:MM:SS,mmm --> HH:MM:SS,mmm
+const TIMECODE_RE = /^(\d+):(\d+):(\d+),(\d+)\s+-->\s+(\d+):(\d+):(\d+),(\d+)$/;
+
+function timeToSeconds(match, offset) {
+  const [hours, minutes, seconds, millis] = match.slice(offset, offset + 4);
   return parseInt(hours) * 3600 + parseInt(minutes) * 60 + parseInt(seconds) + parseInt(millis) / 1000;
 }
 
@@ -60,20 +60,24 @@ export function parseSrt(text) {
   // Normalize line endings
   const normalized = text.replace(/\r\n/g, '\n');
   // Split by blank lines (one or more consecutive newlines)
-  const blocks = normalized.split(/\n\s*\n/).filter(b => b.trim());
+  const blocks = normalized.split(/\n\s*\n/);
 
   const cues = [];
+  let blockNum = 0;
   for (const block of blocks) {
+    // Blank/whitespace-only blocks (e.g. trailing newlines at EOF) are not cues
+    if (!block.trim()) continue;
+    blockNum++;
+
     const lines = block.split('\n').map(l => l.trim()).filter(l => l);
-    if (lines.length < 2) continue; // Skip malformed blocks
+    // First line is index, second line is timecode — anything else is malformed
+    const match = lines.length >= 2 ? lines[1].match(TIMECODE_RE) : null;
+    if (!match) {
+      throw new Error(`parseSrt: malformed cue block ${blockNum}: "${lines[0]}"`);
+    }
 
-    // First line is index, second line is timecode
-    const timecodeLine = lines[1];
-    const match = timecodeLine.match(/^(.+?)\s+-->\s+(.+?)$/);
-    if (!match) continue;
-
-    const startSec = timeToSeconds(match[1]);
-    const endSec = timeToSeconds(match[2]);
+    const startSec = timeToSeconds(match, 1);
+    const endSec = timeToSeconds(match, 5);
     const text = lines.slice(2).join(' ');
 
     cues.push({startSec, endSec, text});

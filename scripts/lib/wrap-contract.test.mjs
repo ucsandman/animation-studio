@@ -26,6 +26,14 @@ test('parseSrt parses cues incl multi-line and CRLF', () => {
     {startSec: 20.5, endSec: 21, text: 'bye'},
   ]);
 });
+test('parseSrt throws on malformed timestamp naming the block', () => {
+  const srt = '1\n00:00:10.000 --> 00:00:14,000\nhello\n\n2\n00:00:20,500 --> 00:00:21,000\nbye\n';
+  assert.throws(() => parseSrt(srt), /malformed cue block 1/);
+});
+test('parseSrt tolerates trailing blank lines after the last cue', () => {
+  const srt = '1\n00:00:10,000 --> 00:00:14,000\nhello\n\n\n\n';
+  assert.deepEqual(parseSrt(srt), [{startSec: 10, endSec: 14, text: 'hello'}]);
+});
 test('windowCues clamps and re-bases', () => {
   const cues = [{startSec: 10, endSec: 14, text: 'a'}, {startSec: 30, endSec: 31, text: 'b'}];
   assert.deepEqual(windowCues(cues, 12, 20), [{startSec: 0, endSec: 2, text: 'a'}]);
