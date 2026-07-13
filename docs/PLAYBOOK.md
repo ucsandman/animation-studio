@@ -117,6 +117,34 @@ placeholder so smoke stays green on a clean clone.
   verify it's gone in the first extracted frame before recording the full take
   (see record-paperroute-demo.mjs).
 
+### Marketing Handoff / wrap pipeline (Magnetic round-trip — DashClaw pilot facts)
+- The walkthrough fed to Magnetic MUST carry an audio stream: envelope/dead-air analysis
+  and Rough Cut only fire on assets with audio. Playwright `recordVideo` webm is SILENT —
+  generate the VO (ElevenLabs) and mux it on before import (`npx remotion ffmpeg`), and
+  build the narration track synced to recorded per-beat timestamps so nav/settle overhead
+  never desyncs it. Encode audio 48 kHz and make it span the FULL video length.
+- Magnetic's WYSIWYG handoff export (`renderMixdownWav`, used whenever the spine is >1
+  clip) decodes each spine clip's audio CONCURRENTLY — `Promise.all` of `decodeAudioData`
+  on the whole per-asset PCM, once per clip. Rough Cut splits one asset into many short
+  clips, so a naturally-paced walkthrough (10+ dead-air gaps → 12 clips) makes 12
+  concurrent same-asset decodes and the export dies with `Export failed: Unable to decode
+  audio data`. Verified ceiling: ~3 clips exports reliably, ≥4 races/fails. (Single-clip
+  export takes the reliable smart-render stream-copy path instead — never hits this.)
+  This is a final-cut-pro bug (read-only here); the fix is on the walkthrough side.
+- So: structure the walkthrough as a few feature GROUPS with VO continuous inside each
+  group (intra-group edge gaps stay under Rough Cut's 0.75 s min-run) and only 1–2 long
+  (~5 s) dead-air gaps AT the feature boundaries. Rough Cut then makes exactly 1–2 cuts →
+  ≤3 clips, and the cuts land on the feature transitions (clean segment boundaries).
+- TRIM the leading/trailing silence off the muxed mp4 before import — otherwise Rough Cut
+  cuts the head/tail too and leaves sub-second sliver clips that (a) inflate the concurrent
+  decode count and (b) shift marker-boundary indexing. Place `clip:`/`end` markers on the
+  SIGNIFICANT spine boundaries (both adjacent clips ≥1 s) via
+  `window.__magneticTimeline.playback.seek(flicks)` then the `m` shortcut.
+- Captions come from Magnetic's whisper auto-transcription (`ggml-base.en.bin`), which
+  runs in the background after import. Wait for the asset's `transcriptUrl` (poll
+  `window.api.getLibrary()`) BEFORE exporting or `captions.srt` ships empty; let the
+  transcription CPU settle a couple seconds before the export decode so they don't contend.
+
 ### Blender 5.1.2 (headless bpy) — each of these was a silent wrong-output bug
 - Scene cleanup: `for obj in list(bpy.data.objects): bpy.data.objects.remove(obj, do_unlink=True)`.
   `scene.collection.objects` MISSES the default cube/light/camera (child collection).
