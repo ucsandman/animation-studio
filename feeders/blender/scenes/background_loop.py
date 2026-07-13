@@ -62,6 +62,32 @@ def parse_args() -> argparse.Namespace:
         help="starting Phase Offset as a fraction of tau (0-1); shifts the "
         "pattern's frame-1 appearance without breaking the seamless loop",
     )
+    # Hue/brightness of the bright wave bands. Brightness comes from the
+    # PALETTE values (accent hex x strength), never from emission strength -
+    # emission stays 1.0 under the Standard view transform or brand colors
+    # hue-shift (PLAYBOOK, Task 2 finding).
+    parser.add_argument(
+        "--accent",
+        default=None,
+        help="hex color for the bright wave bands (default: brand colors.brand)",
+    )
+    parser.add_argument(
+        "--accent-strength",
+        type=float,
+        default=0.08,
+        dest="accent_strength",
+        help="linear multiplier on the accent color (0.08 = original subtle "
+        "backdrop tuning; raise for brighter, thumbnail-readable footage)",
+    )
+    parser.add_argument(
+        "--shadow-strength",
+        type=float,
+        default=0.0,
+        dest="shadow_strength",
+        help="linear accent added to the DARK bands (dark stop = brand bg + "
+        "accent x this). 0 = original pure-bg shadows; small values (~0.05) "
+        "tint-lift the shadows so the whole frame reads in a dark UI",
+    )
     # Chunked --animation renders: restrict the rendered range without touching
     # the loop math (Phase Offset keyframes stay at frame 1 and frame_count+1,
     # so frame K's pixels are identical whether rendered in one run or in
@@ -131,17 +157,23 @@ def build_scene(args: argparse.Namespace) -> None:
     wave.inputs["Detail"].default_value = args.detail  # noqa: vulture
 
     # bg -> faint accent ramp; accent stays subtle (backdrop, not hero)
+    accent_pre = hex_rgba(args.accent or brand["colors"]["brand"])
+    bg = hex_rgba(brand["colors"]["bg"])
     ramp.color_ramp.elements[0].position = 0.35  # noqa: vulture
-    ramp.color_ramp.elements[0].color = hex_rgba(brand["colors"]["bg"])  # noqa: vulture
+    ramp.color_ramp.elements[0].color = (  # noqa: vulture
+        bg[0] + accent_pre[0] * args.shadow_strength,
+        bg[1] + accent_pre[1] * args.shadow_strength,
+        bg[2] + accent_pre[2] * args.shadow_strength,
+        1.0,
+    )
     ramp.color_ramp.elements[1].position = 1.0  # noqa: vulture
     # NOTE: 0.22 (as drafted) looked bright/saturated on render, not subtle -
     # sRGB gamma means a 22%-linear-scaled color still displays at ~50%
     # perceived brightness. 0.08 was tuned by rendering and inspecting frame 1.
-    accent = hex_rgba(brand["colors"]["brand"])
     ramp.color_ramp.elements[1].color = (  # noqa: vulture
-        accent[0] * 0.08,
-        accent[1] * 0.08,
-        accent[2] * 0.08,
+        accent_pre[0] * args.accent_strength,
+        accent_pre[1] * args.accent_strength,
+        accent_pre[2] * args.accent_strength,
         1.0,
     )
 

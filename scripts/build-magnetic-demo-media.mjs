@@ -52,13 +52,22 @@ const FRAME_COUNT = 240; // 8s @ 30fps: plenty for filmstrip/skim footage, and t
 const CHUNK_FRAMES = 60; // frames per Blender process; under the observed frame-67 hang
 const CHUNK_TIMEOUT_MS = 240_000; // ~35s expected per chunk; a hang fails loudly here
 
-// Three variants of the one scene, distinguished by the Wave texture's own knobs
-// (background_loop.py's --scale/--distortion/--detail/--phase-start) so the
-// filmstrip browser shows visibly distinct thumbnails without touching color.
+// Three variants of the one scene, distinguished by the Wave texture's knobs
+// (--scale/--distortion/--detail/--phase-start) AND by hue+brightness
+// (--accent/--accent-strength/--shadow-strength) so the filmstrip browser reads
+// three different SCENES, not one pattern at three densities. Hues are diegetic
+// footage content (muted cinematic families), not brand chrome — the brand's
+// color rules (green = waveforms-only etc.) govern chrome/copy, not what the
+// "filmed" footage may depict. Strengths tuned by measured mean luma: the
+// original 0.08 tuning measured 26.4/255; these land 53-59/255 (~2x, so
+// thumbnails read in a dark UI while staying moody).
 const VARIANTS = [
-  {id: 'a', scale: 1.2, distortion: 2.4, detail: 2.0, phaseStart: 0.0}, // original tuning
-  {id: 'b', scale: 2.6, distortion: 4.0, detail: 3.5, phaseStart: 0.4}, // tight, turbulent
-  {id: 'c', scale: 0.6, distortion: 1.0, detail: 1.0, phaseStart: 0.75}, // broad, calm
+  // navy/blue wave — the VO take reuses this clip's picture
+  {id: 'a', scale: 1.2, distortion: 2.4, detail: 2.0, phaseStart: 0.0, accent: '#0a84ff', accentStrength: 0.42, shadowStrength: 0.05},
+  // deep muted teal, tight turbulent bands
+  {id: 'b', scale: 2.6, distortion: 4.0, detail: 3.5, phaseStart: 0.4, accent: '#2e8b74', accentStrength: 0.5, shadowStrength: 0.06},
+  // dark muted warm amber, broad calm bands
+  {id: 'c', scale: 0.6, distortion: 1.0, detail: 1.0, phaseStart: 0.75, accent: '#c08a45', accentStrength: 0.33, shadowStrength: 0.045},
 ];
 
 // Written for the ear; two scripted dead-air gaps sit between the three lines.
@@ -136,12 +145,12 @@ function renderStage(variant) {
   // Resume at the last contiguous frame (re-render it: a killed run may have
   // left it partially written).
   let next = Math.max(1, done);
-  console.log(`render-${variant.id}: rendering frames ${next}..${FRAME_COUNT} in chunks of ${CHUNK_FRAMES} (scale=${variant.scale} distortion=${variant.distortion} detail=${variant.detail} phase-start=${variant.phaseStart})`);
+  console.log(`render-${variant.id}: rendering frames ${next}..${FRAME_COUNT} in chunks of ${CHUNK_FRAMES} (accent=${variant.accent} scale=${variant.scale} distortion=${variant.distortion} detail=${variant.detail} phase-start=${variant.phaseStart})`);
   while (next <= FRAME_COUNT) {
     const end = Math.min(next + CHUNK_FRAMES - 1, FRAME_COUNT);
     console.log(`render-${variant.id}: chunk ${next}-${end}`);
     run(
-      `python feeders/blender/render.py feeders/blender/scenes/background_loop.py --out "${framesDir}" --animation --brand ${BRAND} --frame-count ${FRAME_COUNT} --scale ${variant.scale} --distortion ${variant.distortion} --detail ${variant.detail} --phase-start ${variant.phaseStart} --start-frame ${next} --end-frame ${end}`,
+      `python feeders/blender/render.py feeders/blender/scenes/background_loop.py --out "${framesDir}" --animation --brand ${BRAND} --frame-count ${FRAME_COUNT} --scale ${variant.scale} --distortion ${variant.distortion} --detail ${variant.detail} --phase-start ${variant.phaseStart} --accent "${variant.accent}" --accent-strength ${variant.accentStrength} --shadow-strength ${variant.shadowStrength} --start-frame ${next} --end-frame ${end}`,
       ROOT,
       CHUNK_TIMEOUT_MS,
     );
