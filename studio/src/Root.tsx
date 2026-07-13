@@ -7,6 +7,7 @@ import { ProductDemo, productDemoSchema } from "./templates/ProductDemo";
 import { LogoReveal, logoRevealSchema } from "./templates/LogoReveal";
 import { LaunchVideo, launchVideoSchema } from "./templates/LaunchVideo";
 import { AnimatedOG, animatedOgSchema } from "./templates/AnimatedOG";
+import { WrapClip, wrapClipSchema, wrapDurationInFrames } from "./templates/WrapClip";
 import { launchTiming } from "./lib/launchTiming";
 
 export const RemotionRoot: React.FC = () => {
@@ -128,6 +129,28 @@ export const RemotionRoot: React.FC = () => {
           loopSequence: null,
           loopFrames: 240,
         }}
+      />
+      <Composition
+        id="WrapClip"
+        component={WrapClip}
+        durationInFrames={345}
+        fps={30}
+        width={1920}
+        height={1080}
+        schema={wrapClipSchema}
+        defaultProps={{
+          brandId: "dashclaw",
+          video: null,
+          segment: null,
+          captions: [],
+          cta: "",
+          music: null,
+        }}
+        calculateMetadata={({props}) => ({
+          durationInFrames: wrapDurationInFrames(props.segment),
+          width: props.formatWidth ?? 1920,
+          height: props.formatHeight ?? 1080,
+        })}
       />
     </>
   );
