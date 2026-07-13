@@ -139,6 +139,13 @@ placeholder so smoke stays green on a clean clone.
 - Always render single-frame proofs (and verify alpha: corner pixel `(0,0,0,0)`)
   before committing to an animation render. Renders were fast on the RTX 3070 Ti
   (~21s for 90 frames, ~96s for 240).
+- Long single-process `--animation` runs can HANG mid-sequence (observed: 66 frames
+  in ~34s then zero output until killed, frame 67/360). Verified workaround: chunked
+  renders — fresh Blender process per ~60 frames (`--start-frame`/`--end-frame`;
+  keyframes unchanged, so chunk output is pixel-identical) with a hard timeout
+  (`render.py --timeout N`). On Windows the timeout must kill the process TREE
+  (`taskkill /T /F`) — killing only the shell/python parent orphans blender.exe, which
+  keeps writing frames into the output dir (see build-magnetic-demo-media.mjs).
 
 ### ComfyUI (non-load-bearing)
 - Ports 8000/8188; models live at

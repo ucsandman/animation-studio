@@ -50,7 +50,14 @@ const FRAME_COUNT = 240; // 8s @ 30fps: plenty for filmstrip/skim footage, and t
 // picture loops seamlessly (background_loop's whole-cycle phase drift), so longer
 // timeline durations come free via looping rather than more render time.
 const CHUNK_FRAMES = 60; // frames per Blender process; under the observed frame-67 hang
-const CHUNK_TIMEOUT_MS = 240_000; // ~35s expected per chunk; a hang fails loudly here
+// Two-level chunk timeout. render.py enforces CHUNK_TIMEOUT_S itself (Popen.wait
+// timeout -> taskkill /T /F on Blender's process TREE — killing only the node-side
+// shell child leaves python/blender orphans that can keep writing into framesDir).
+// The node execSync timeout is a strictly larger outer fallback that should never
+// fire; if it somehow does, the pre-chunk stray-frame cleanup below contains any
+// contamination an orphan could have produced.
+const CHUNK_TIMEOUT_S = 200; // ~35s expected per chunk; a hang fails loudly here
+const CHUNK_TIMEOUT_MS = 260_000; // outer node fallback, > CHUNK_TIMEOUT_S
 
 // Three variants of the one scene, distinguished by the Wave texture's knobs
 // (--scale/--distortion/--detail/--phase-start) AND by hue+brightness
@@ -84,10 +91,6 @@ const VO_LINES = [
 // short to keep the DETECTED silences inside the 2-3s ask.
 const PAUSES_MS = [2500, 2300];
 
-mkdirSync(FOOTAGE_DIR, {recursive: true});
-mkdirSync(VO_DIR, {recursive: true});
-mkdirSync(OUT_DIR, {recursive: true});
-
 const run = (cmd, cwd = ROOT, timeout) => execSync(cmd, {cwd, stdio: 'inherit', ...(timeout ? {timeout} : {})});
 
 const runCapture = (cmd, cwd = ROOT) => execSync(cmd, {cwd, encoding: 'utf8'});
@@ -99,18 +102,51 @@ const variantConfig = (variant) => ({
   ...variant,
 });
 
-// Highest N such that frames 1..N are all present on disk (contiguous prefix).
-function contiguousFrames(framesDir) {
-  const present = new Set(
-    readdirSync(framesDir)
-      .map((f) => /^frame_(\d{4})\.png$/.exec(f)?.[1])
-      .filter(Boolean)
-      .map(Number),
-  );
-  let n = 0;
-  while (present.has(n + 1)) n += 1;
-  return n;
+// --- pure helpers (exported for scripts/build-magnetic-demo-media.test.mjs) ---
+
+// Frame inventory of a directory listing: `prefix` is the highest N such that
+// frames 1..N are all present; `strays` are frame numbers BEYOND that prefix
+// (e.g. left by an orphaned Blender process a timeout failed to kill). Strays
+// must be deleted before rendering — resume math assumes prefix-only content.
+export function frameInventory(names) {
+  const nums = names
+    .map((f) => /^frame_(\d{4})\.png$/.exec(f)?.[1])
+    .filter(Boolean)
+    .map(Number);
+  const present = new Set(nums);
+  let prefix = 0;
+  while (present.has(prefix + 1)) prefix += 1;
+  const strays = nums.filter((n) => n > prefix).sort((x, y) => x - y);
+  return {prefix, strays};
 }
+
+// Key-order-insensitive config equality (render-config.json provenance checks).
+const canonical = (v) =>
+  Array.isArray(v)
+    ? v.map(canonical)
+    : v && typeof v === 'object'
+      ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canonical(v[k])]))
+      : v;
+export const sameConfig = (a, b) => JSON.stringify(canonical(a)) === JSON.stringify(canonical(b));
+
+// Extracts every `silence_duration: <s>` ffmpeg's silencedetect printed.
+export const parseSilenceDurations = (text) =>
+  [...text.matchAll(/silence_duration: ([\d.]+)/g)].map((m) => Number(m[1]));
+
+// The take must contain EXACTLY the two scripted 2-3s dead-air pauses — count
+// alone would accept a 5s hole or a clipped 1.6s gap as "a pause".
+export function assertScriptedPauses(durations) {
+  if (durations.length !== 2) {
+    throw new Error(`voiceover-take: expected 2 detected silences (the scripted pauses), found ${durations.length}`);
+  }
+  for (const d of durations) {
+    if (d < 2 || d > 3) {
+      throw new Error(`voiceover-take: detected silence of ${d.toFixed(2)}s outside the scripted 2-3s window`);
+    }
+  }
+}
+
+// --- stages ---
 
 // Renders one variant's PNG frames in CHUNK_FRAMES-sized Blender runs. Resumable:
 // a render-config.json marker records the exact knob set; on mismatch (or absence)
@@ -124,8 +160,7 @@ function renderStage(variant) {
   mkdirSync(framesDir, {recursive: true});
 
   const markerOk =
-    existsSync(markerPath) &&
-    JSON.stringify(JSON.parse(readFileSync(markerPath, 'utf8'))) === JSON.stringify(config);
+    existsSync(markerPath) && sameConfig(JSON.parse(readFileSync(markerPath, 'utf8')), config);
   if (!markerOk) {
     const stale = readdirSync(framesDir).filter((f) => /^frame_\d+\.png$/.test(f));
     if (stale.length > 0) {
@@ -136,7 +171,19 @@ function renderStage(variant) {
     writeFileSync(markerPath, JSON.stringify(config, null, 2) + '\n');
   }
 
-  const done = contiguousFrames(framesDir);
+  // Delete frames beyond the contiguous prefix BEFORE rendering: an orphaned
+  // Blender process (timeout kill that missed the tree) may have kept writing
+  // frames the resume math doesn't account for.
+  const inv = frameInventory(readdirSync(framesDir));
+  for (const n of inv.strays) {
+    const stray = join(framesDir, `frame_${String(n).padStart(4, '0')}.png`);
+    rmSync(stray, {force: true});
+  }
+  if (inv.strays.length > 0) {
+    console.log(`render-${variant.id}: removed ${inv.strays.length} stray frame(s) beyond contiguous prefix ${inv.prefix}`);
+  }
+
+  const done = inv.prefix;
   if (done >= FRAME_COUNT) {
     console.log(`render-${variant.id}: all ${FRAME_COUNT} frames present, skipping`);
     return framesDir;
@@ -150,11 +197,11 @@ function renderStage(variant) {
     const end = Math.min(next + CHUNK_FRAMES - 1, FRAME_COUNT);
     console.log(`render-${variant.id}: chunk ${next}-${end}`);
     run(
-      `python feeders/blender/render.py feeders/blender/scenes/background_loop.py --out "${framesDir}" --animation --brand ${BRAND} --frame-count ${FRAME_COUNT} --scale ${variant.scale} --distortion ${variant.distortion} --detail ${variant.detail} --phase-start ${variant.phaseStart} --accent "${variant.accent}" --accent-strength ${variant.accentStrength} --shadow-strength ${variant.shadowStrength} --start-frame ${next} --end-frame ${end}`,
+      `python feeders/blender/render.py feeders/blender/scenes/background_loop.py --out "${framesDir}" --timeout ${CHUNK_TIMEOUT_S} --animation --brand ${BRAND} --frame-count ${FRAME_COUNT} --scale ${variant.scale} --distortion ${variant.distortion} --detail ${variant.detail} --phase-start ${variant.phaseStart} --accent "${variant.accent}" --accent-strength ${variant.accentStrength} --shadow-strength ${variant.shadowStrength} --start-frame ${next} --end-frame ${end}`,
       ROOT,
       CHUNK_TIMEOUT_MS,
     );
-    const have = contiguousFrames(framesDir);
+    const have = frameInventory(readdirSync(framesDir)).prefix;
     if (have < end) {
       throw new Error(`render-${variant.id}: chunk ${next}-${end} finished but only frames 1..${have} are contiguous on disk`);
     }
@@ -165,18 +212,29 @@ function renderStage(variant) {
 }
 
 // Encodes one variant's completed frame dir to H.264 yuv420p faststart mp4.
-// Cached on the full knob set; refuses to encode an incomplete sequence.
+// Cached on the full knob set; refuses to encode an incomplete sequence or one
+// whose render-config.json provenance doesn't match the CURRENT knobs (a
+// standalone `--stage encode` must never bake stale-config frames into a clip).
 function encodeClip(variant) {
   const outMp4 = join(OUT_DIR, `clip-${variant.id}.mp4`);
   const framesDir = join(FOOTAGE_DIR, variant.id);
-  const key = cacheKey({stage: `clip-${variant.id}`, ...variantConfig(variant)});
+  const config = variantConfig(variant);
+  const key = cacheKey({stage: `clip-${variant.id}`, ...config});
   const {hit} = checkCache(BRAND, `clip-${variant.id}`, key, [outMp4]);
   if (hit) {
     console.log(`encode clip-${variant.id}: cache hit, skipping (${outMp4})`);
     return outMp4;
   }
 
-  const done = existsSync(framesDir) ? contiguousFrames(framesDir) : 0;
+  const markerPath = join(framesDir, 'render-config.json');
+  if (!existsSync(markerPath)) {
+    throw new Error(`encode clip-${variant.id}: no render-config.json in ${framesDir} — run --stage render-${variant.id} first`);
+  }
+  if (!sameConfig(JSON.parse(readFileSync(markerPath, 'utf8')), config)) {
+    throw new Error(`encode clip-${variant.id}: render-config.json does not match the current variant knobs — frames are from a different config; run --stage render-${variant.id} first`);
+  }
+
+  const done = frameInventory(readdirSync(framesDir)).prefix;
   if (done < FRAME_COUNT) {
     throw new Error(`encode clip-${variant.id}: frames incomplete (${done}/${FRAME_COUNT}) — run --stage render-${variant.id} first`);
   }
@@ -308,10 +366,9 @@ function muxVoiceoverTake(clipAPath, takeAudioPath) {
   return outMp4;
 }
 
-// Sanity-verifies the take reports exactly two silences >=1.5s (the two scripted
-// pauses) via ffmpeg's silencedetect filter, per the PLAYBOOK verification idiom.
-// Logs the raw silencedetect lines; throws if the count is wrong (catches a broken
-// concat or an over-trimmed mux before it reaches Task 7).
+// Verifies the take contains exactly the two scripted 2-3s dead-air pauses via
+// ffmpeg's silencedetect, per the PLAYBOOK verification idiom. Asserts BOTH the
+// count and each duration's [2,3]s window; logs the raw silencedetect lines.
 function verifySilences(mp4Path) {
   // -vn + explicit pcm_s16le: Remotion's trimmed ffmpeg lacks wrapped_avframe
   // (the null muxer's default video encoder), so a bare `-f null -` errors with
@@ -320,21 +377,24 @@ function verifySilences(mp4Path) {
     `npx remotion ffmpeg -i "${mp4Path}" -vn -af silencedetect=noise=-35dB:d=1.5 -c:a pcm_s16le -f null - 2>&1`,
     STUDIO,
   );
-  const starts = out.match(/silence_start: [\d.]+/g) ?? [];
   console.log('voiceover-take: silencedetect output --');
   for (const line of out.split('\n')) {
     if (line.includes('silence_start') || line.includes('silence_end')) console.log(`  ${line.trim()}`);
   }
-  if (starts.length !== 2) {
-    throw new Error(`voiceover-take: expected 2 detected silences (the scripted pauses), found ${starts.length}`);
-  }
-  console.log(`voiceover-take: verified ${starts.length}/2 scripted dead-air pauses detected.`);
+  const durations = parseSilenceDurations(out);
+  assertScriptedPauses(durations);
+  console.log(`voiceover-take: verified 2/2 scripted dead-air pauses, durations ${durations.map((d) => d.toFixed(2) + 's').join(', ')} (both within 2-3s).`);
 }
 
 function voStage() {
   const clipA = join(OUT_DIR, 'clip-a.mp4');
-  if (!existsSync(clipA)) {
-    throw new Error('vo: clip-a.mp4 missing — run --stage encode first');
+  // Provenance, not mere existence: clip-a must be the encode-stage output of the
+  // CURRENT variant-a config (cache key covers the full knob set and the cache
+  // layer re-checks the artifact exists non-empty on disk).
+  const key = cacheKey({stage: 'clip-a', ...variantConfig(VARIANTS[0])});
+  const {hit} = checkCache(BRAND, 'clip-a', key, [clipA]);
+  if (!hit) {
+    throw new Error('vo: clip-a.mp4 missing or not built from the current variant-a config — run --stage encode first');
   }
   const segmentPaths = generateVoSegments();
   const takeAudioPath = buildTakeAudio(segmentPaths);
@@ -357,6 +417,10 @@ async function main() {
     throw new Error(`unknown --stage "${stage}" (expected ${Object.keys(STAGES).join('|')}|all)`);
   }
 
+  mkdirSync(FOOTAGE_DIR, {recursive: true});
+  mkdirSync(VO_DIR, {recursive: true});
+  mkdirSync(OUT_DIR, {recursive: true});
+
   console.log(`== Magnetic demo media builder (stage: ${stage}) ==`);
   const toRun = stage === 'all' ? Object.keys(STAGES) : [stage];
   for (const name of toRun) STAGES[name]();
@@ -370,7 +434,12 @@ async function main() {
   console.log(`build-magnetic-demo-media OK (stage: ${stage})`);
 }
 
-main().catch((err) => {
-  console.error(err);
-  process.exit(1);
-});
+// Import-safe (the test file imports the pure helpers above): only run when
+// executed directly, matching feeders/audio/client.mjs's isMain convention.
+const isMain = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isMain) {
+  main().catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}

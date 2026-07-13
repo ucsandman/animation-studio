@@ -36,6 +36,19 @@ def find_blender(env: dict) -> str | None:
     return shutil.which("blender")
 
 
+def kill_tree(pid: int) -> None:
+    """Kill a process and its whole descendant tree.
+
+    Windows: taskkill /T /F — a plain Popen.kill() TerminateProcess-es only the
+    direct child and leaves grandchildren (anything Blender spawned) running,
+    free to keep writing into the output directory.
+    """
+    if sys.platform == "win32":
+        subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True)
+    else:
+        subprocess.run(["kill", "-9", str(pid)], capture_output=True)
+
+
 def build_cmd(
     blender: str,
     scene: str,
@@ -74,6 +87,14 @@ def main() -> int:
     group.add_argument(
         "--animation", action="store_true", help="render the scene's full range"
     )
+    parser.add_argument(
+        "--timeout",
+        type=float,
+        default=None,
+        help="seconds before the Blender process TREE is killed (exit 124). "
+        "Long single-process renders have been observed to hang mid-sequence; "
+        "callers chunking animation renders should always set this.",
+    )
     args, extra = parser.parse_known_args()
 
     scene = Path(args.scene).resolve()
@@ -96,10 +117,24 @@ def main() -> int:
         blender, str(scene), str(out_dir), args.frame, args.animation, extra
     )
     print("render:", " ".join(cmd))
-    proc = subprocess.run(cmd)
-    if proc.returncode != 0:
-        print(f"blender exited {proc.returncode}", file=sys.stderr)
-        return proc.returncode or 1
+    # Popen + wait(timeout) instead of subprocess.run: on expiry the whole
+    # Blender process TREE must die (kill_tree) — an orphan surviving a
+    # parent-only kill can keep writing frames into out_dir after the caller
+    # has moved on (frame-67 hang, Blender 5.1.2 headless EEVEE).
+    proc = subprocess.Popen(cmd)
+    try:
+        returncode = proc.wait(timeout=args.timeout)
+    except subprocess.TimeoutExpired:
+        kill_tree(proc.pid)
+        proc.wait()
+        print(
+            f"blender timed out after {args.timeout}s; process tree killed",
+            file=sys.stderr,
+        )
+        return 124
+    if returncode != 0:
+        print(f"blender exited {returncode}", file=sys.stderr)
+        return returncode or 1
 
     frames = sorted(out_dir.glob("frame_*.png"))
     if not frames:
